@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nariya — Dashboard</title>
+    <link rel="stylesheet" href="dashboard.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <div class="app">
+        <!-- ═══ Sidebar ═══ -->
+        <nav class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <img src="../../icons/icon48.png" alt="Nariya" class="sidebar-logo">
+                <span class="sidebar-title">Nariya</span>
+            </div>
+
+            <div class="sidebar-nav">
+                <button class="nav-item active" data-tab="rules">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" />
+                        <rect x="9" y="3" width="6" height="4" rx="1" />
+                        <line x1="9" y1="12" x2="15" y2="12" />
+                        <line x1="9" y1="16" x2="13" y2="16" />
+                    </svg>
+                    <span>Rules</span>
+                </button>
+                <button class="nav-item" data-tab="interceptor">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10" />
+                        <path d="M12 8v4l3 3" />
+                    </svg>
+                    <span>Interceptor</span>
+                </button>
+                <button class="nav-item" data-tab="repeater">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="17 1 21 5 17 9" />
+                        <path d="M3 11V9a4 4 0 014-4h14" />
+                        <polyline points="7 23 3 19 7 15" />
+                        <path d="M21 13v2a4 4 0 01-4 4H3" />
+                    </svg>
+                    <span>Repeater</span>
+                </button>
+                <button class="nav-item" data-tab="comparer">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="4" width="8" height="16" rx="1" />
+                        <rect x="14" y="4" width="8" height="16" rx="1" />
+                        <line x1="12" y1="6" x2="12" y2="18" stroke-dasharray="2" />
+                    </svg>
+                    <span>Comparer</span>
+                </button>
+            </div>
+
+            <div class="sidebar-footer">
+                <label class="toggle-switch" title="Global Enable/Disable">
+                    <input type="checkbox" id="globalToggle" checked>
+                    <span class="slider"></span>
+                </label>
+                <span class="sidebar-footer-label">Enabled</span>
+            </div>
+        </nav>
+
+        <!-- ═══ Main Content ═══ -->
+        <main class="main-content">
+
+            <!-- ─── Rules Tab ─── -->
+            <section class="tab-panel active" id="tab-rules">
+                <div class="panel-header">
+                    <h1>Request Rules</h1>
+                    <div class="panel-actions">
+                        <button class="btn btn-ghost" id="importRulesBtn">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                                <polyline points="7 10 12 15 17 10" />
+                                <line x1="12" y1="15" x2="12" y2="3" />
+                            </svg>
+                            Import
+                        </button>
+                        <button class="btn btn-ghost" id="exportRulesBtn">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                                <polyline points="17 8 12 3 7 8" />
+                                <line x1="12" y1="3" x2="12" y2="15" />
+                            </svg>
+                            Export
+                        </button>
+                        <button class="btn btn-primary" id="addRuleBtn">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                                <path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="2"
+                                    stroke-linecap="round" />
+                            </svg>
+                            Add Rule
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Rule Type Filters -->
+                <div class="filter-bar">
+                    <button class="filter-chip active" data-filter="all">All</button>
+                    <button class="filter-chip" data-filter="redirect">Redirect</button>
+                    <button class="filter-chip" data-filter="header">Header</button>
+                    <button class="filter-chip" data-filter="mock">Mock</button>
+                    <button class="filter-chip" data-filter="delay">Delay</button>
+                    <button class="filter-chip" data-filter="script">Script</button>
+                </div>
+
+                <!-- Rules Table -->
+                <div class="rules-table-container">
+                    <table class="rules-table" id="rulesTable">
+                        <thead>
+                            <tr>
+                                <th width="50">On</th>
+                                <th width="80">Type</th>
+                                <th>Name</th>
+                                <th>URL Pattern</th>
+                                <th width="120">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rulesTableBody">
+                            <tr class="empty-row">
+                                <td colspan="5">
+                                    <div class="empty-state">
+                                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="1.5" opacity="0.3">
+                                            <path
+                                                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" />
+                                            <rect x="9" y="3" width="6" height="4" rx="1" />
+                                        </svg>
+                                        <p>No rules yet. Click "Add Rule" to get started.</p>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- ─── Interceptor Tab ─── -->
+            <section class="tab-panel" id="tab-interceptor">
+                <div class="panel-header">
+                    <h1>Intercepting Proxy</h1>
+                    <div class="panel-actions">
+                        <select id="interceptorTabSelect" class="select-input">
+                            <option value="">Select a tab...</option>
+                        </select>
+                        <button class="btn btn-primary" id="toggleInterceptorBtn">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <polygon points="5 3 19 12 5 21 5 3" />
+                            </svg>
+                            Attach
+                        </button>
+                    </div>
+                </div>
+
+                <div class="interceptor-content">
+                    <div class="interceptor-status" id="interceptorStatus">
+                        <div class="status-indicator offline"></div>
+                        <span>Not attached to any tab</span>
+                    </div>
+
+                    <!-- Paused Requests -->
+                    <div class="paused-requests" id="pausedRequestsPanel">
+                        <h3>Paused Requests</h3>
+                        <div class="paused-list" id="pausedRequestsList">
+                            <div class="empty-state-sm">No paused requests</div>
+                        </div>
+                    </div>
+
+                    <!-- Request Editor -->
+                    <div class="request-editor" id="requestEditor" style="display:none;">
+                        <h3>Edit Request</h3>
+                        <div class="editor-fields">
+                            <div class="field-row">
+                                <label>Method</label>
+                                <select id="editMethod" class="select-input">
+                                    <option>GET</option>
+                                    <option>POST</option>
+                                    <option>PUT</option>
+                                    <option>PATCH</option>
+                                    <option>DELETE</option>
+                                    <option>HEAD</option>
+                                    <option>OPTIONS</option>
+                                </select>
+                            </div>
+                            <div class="field-row">
+                                <label>URL</label>
+                                <input type="text" id="editUrl" class="text-input" placeholder="https://...">
+                            </div>
+                            <div class="field-row">
+                                <label>Headers</label>
+                                <textarea id="editHeaders" class="code-input" rows="4"
+                                    placeholder='{"Content-Type": "application/json"}'></textarea>
+                            </div>
+                            <div class="field-row">
+                                <label>Body</label>
+                                <textarea id="editBody" class="code-input" rows="6"
+                                    placeholder="Request body..."></textarea>
+                            </div>
+                            <div class="editor-actions">
+                                <button class="btn btn-ghost" id="cancelEditBtn">Cancel</button>
+                                <button class="btn btn-primary" id="forwardEditBtn">Forward</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ─── Repeater Tab ─── -->
+            <section class="tab-panel" id="tab-repeater">
+                <div class="panel-header">
+                    <h1>Request Repeater</h1>
+                    <div class="panel-actions">
+                        <button class="btn btn-ghost" id="clearHistoryBtn">Clear History</button>
+                    </div>
+                </div>
+
+                <div class="repeater-layout">
+                    <!-- History Panel -->
+                    <div class="repeater-history">
+                        <div class="search-bar">
+                            <input type="text" id="historySearch" class="text-input" placeholder="Filter requests...">
+                        </div>
+                        <div class="history-list" id="historyList">
+                            <div class="empty-state-sm">No request history</div>
+                        </div>
+                    </div>
+
+                    <!-- Repeater Panel -->
+                    <div class="repeater-panel">
+                        <div class="repeater-request">
+                            <h3>Request</h3>
+                            <div class="field-row inline">
+                                <select id="repeaterMethod" class="select-input">
+                                    <option>GET</option>
+                                    <option>POST</option>
+                                    <option>PUT</option>
+                                    <option>PATCH</option>
+                                    <option>DELETE</option>
+                                    <option>HEAD</option>
+                                    <option>OPTIONS</option>
+                                </select>
+                                <input type="text" id="repeaterUrl" class="text-input flex-1"
+                                    placeholder="https://api.example.com/endpoint">
+                                <button class="btn btn-primary" id="sendRequestBtn">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2">
+                                        <line x1="22" y1="2" x2="11" y2="13" />
+                                        <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                                    </svg>
+                                    Send
+                                </button>
+                            </div>
+                            <div class="field-row">
+                                <label>Headers</label>
+                                <textarea id="repeaterHeaders" class="code-input" rows="4"
+                                    placeholder='[{"name":"Content-Type","value":"application/json"}]'></textarea>
+                            </div>
+                            <div class="field-row">
+                                <label>Body</label>
+                                <textarea id="repeaterBody" class="code-input" rows="5"
+                                    placeholder="Request body..."></textarea>
+                            </div>
+                        </div>
+
+                        <div class="repeater-response">
+                            <h3>Response <span id="responseStatus" class="response-status"></span> <span
+                                    id="responseDuration" class="response-duration"></span></h3>
+                            <div class="response-tabs">
+                                <button class="resp-tab active" data-resp="body">Body</button>
+                                <button class="resp-tab" data-resp="headers">Headers</button>
+                            </div>
+                            <div class="response-body" id="responseBody">
+                                <pre class="code-output"
+                                    id="responseBodyContent">Send a request to see the response...</pre>
+                            </div>
+                            <div class="response-headers" id="responseHeaders" style="display:none;">
+                                <pre class="code-output" id="responseHeadersContent"></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ─── Comparer Tab ─── -->
+            <section class="tab-panel" id="tab-comparer">
+                <div class="panel-header">
+                    <h1>Response Comparer</h1>
+                    <div class="panel-actions">
+                        <button class="btn btn-ghost" id="swapInputsBtn">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <polyline points="17 1 21 5 17 9" />
+                                <path d="M3 11V9a4 4 0 014-4h14" />
+                                <polyline points="7 23 3 19 7 15" />
+                                <path d="M21 13v2a4 4 0 01-4 4H3" />
+                            </svg>
+                            Swap
+                        </button>
+                        <button class="btn btn-primary" id="compareBtn">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                            </svg>
+                            Compare
+                        </button>
+                    </div>
+                </div>
+
+                <div class="comparer-layout">
+                    <div class="comparer-inputs">
+                        <div class="comparer-pane">
+                            <label>Original (A)</label>
+                            <textarea id="comparerA" class="code-input comparer-textarea"
+                                placeholder='Paste JSON or text here...'></textarea>
+                        </div>
+                        <div class="comparer-pane">
+                            <label>Modified (B)</label>
+                            <textarea id="comparerB" class="code-input comparer-textarea"
+                                placeholder='Paste JSON or text here...'></textarea>
+                        </div>
+                    </div>
+
+                    <div class="diff-output" id="diffOutput" style="display:none;">
+                        <div class="diff-stats" id="diffStats"></div>
+                        <div class="diff-content" id="diffContent"></div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- ═══ Rule Editor Modal ═══ -->
+    <div class="modal-overlay" id="ruleModal" style="display:none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="modalTitle">Add Rule</h2>
+                <button class="btn-close" id="closeModalBtn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="field-row">
+                    <label>Rule Name</label>
+                    <input type="text" id="ruleName" class="text-input" placeholder="My Rule">
+                </div>
+                <div class="field-row">
+                    <label>Rule Type</label>
+                    <select id="ruleType" class="select-input">
+                        <option value="redirect">Redirect URL</option>
+                        <option value="header">Modify Headers</option>
+                        <option value="mock">Mock API Response</option>
+                        <option value="delay">Delay Request</option>
+                        <option value="script">Inject Script</option>
+                    </select>
+                </div>
+                <div class="field-row">
+                    <label>URL Pattern</label>
+                    <input type="text" id="ruleUrlFilter" class="text-input" placeholder="*api.example.com*">
+                </div>
+
+                <!-- Redirect Config -->
+                <div class="config-section" id="configRedirect">
+                    <div class="field-row">
+                        <label>Redirect To</label>
+                        <input type="text" id="redirectUrl" class="text-input"
+                            placeholder="https://new-url.com/endpoint">
+                    </div>
+                </div>
+
+                <!-- Header Config -->
+                <div class="config-section" id="configHeader" style="display:none;">
+                    <div class="field-row">
+                        <label>Request Headers (JSON array)</label>
+                        <textarea id="headerRequestConfig" class="code-input" rows="4"
+                            placeholder='[{"header":"X-Custom","operation":"set","value":"test"}]'></textarea>
+                    </div>
+                    <div class="field-row">
+                        <label>Response Headers (JSON array)</label>
+                        <textarea id="headerResponseConfig" class="code-input" rows="4"
+                            placeholder='[{"header":"Access-Control-Allow-Origin","operation":"set","value":"*"}]'></textarea>
+                    </div>
+                </div>
+
+                <!-- Mock Config -->
+                <div class="config-section" id="configMock" style="display:none;">
+                    <div class="field-row">
+                        <label>Status Code</label>
+                        <input type="number" id="mockStatusCode" class="text-input" value="200" min="100" max="599">
+                    </div>
+                    <div class="field-row">
+                        <label>Response Body (JSON)</label>
+                        <textarea id="mockBody" class="code-input" rows="8"
+                            placeholder='{"message": "Mocked response"}'></textarea>
+                    </div>
+                </div>
+
+                <!-- Delay Config -->
+                <div class="config-section" id="configDelay" style="display:none;">
+                    <div class="field-row">
+                        <label>Delay (ms)</label>
+                        <input type="number" id="delayMs" class="text-input" value="1000" min="0" step="100">
+                    </div>
+                </div>
+
+                <!-- Script Config -->
+                <div class="config-section" id="configScript" style="display:none;">
+                    <div class="field-row">
+                        <label>JavaScript</label>
+                        <textarea id="scriptJs" class="code-input" rows="6"
+                            placeholder="console.log('Injected!');"></textarea>
+                    </div>
+                    <div class="field-row">
+                        <label>CSS</label>
+                        <textarea id="scriptCss" class="code-input" rows="4"
+                            placeholder="body { background: red !important; }"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" id="cancelRuleBtn">Cancel</button>
+                <button class="btn btn-primary" id="saveRuleBtn">Save Rule</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden file input for import -->
+    <input type="file" id="importFileInput" accept=".json" style="display:none;">
+
+    <script src="dashboard.js"></script>
+</body>
+
+</html>
