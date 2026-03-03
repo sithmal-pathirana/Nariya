@@ -205,7 +205,22 @@
                                 <textarea id="editBody" class="code-input" rows="6"
                                     placeholder="Request body..."></textarea>
                             </div>
+                            <div class="field-row">
+                                <label>Script <span
+                                        style="color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0">(JS
+                                        · modify <code>request</code> object and return it)</span></label>
+                                <textarea id="interceptorScript" class="code-input" rows="4" placeholder="// Modify the request before forwarding
+// e.g. request.url = request.url.replace('/v1/', '/v2/');
+// return request;"></textarea>
+                            </div>
                             <div class="editor-actions">
+                                <button class="btn btn-ghost" id="runInterceptorScriptBtn">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2">
+                                        <polygon points="5 3 19 12 5 21 5 3" />
+                                    </svg>
+                                    Run Script
+                                </button>
                                 <button class="btn btn-ghost" id="cancelEditBtn">Cancel</button>
                                 <button class="btn btn-primary" id="forwardEditBtn">Forward</button>
                             </div>
@@ -277,6 +292,7 @@
                             <div class="response-tabs">
                                 <button class="resp-tab active" data-resp="body">Body</button>
                                 <button class="resp-tab" data-resp="headers">Headers</button>
+                                <button class="resp-tab" data-resp="scripts">Scripts</button>
                             </div>
                             <div class="response-body" id="responseBody">
                                 <pre class="code-output"
@@ -284,6 +300,29 @@
                             </div>
                             <div class="response-headers" id="responseHeaders" style="display:none;">
                                 <pre class="code-output" id="responseHeadersContent"></pre>
+                            </div>
+                            <div class="response-scripts" id="responseScripts" style="display:none;">
+                                <div class="field-row">
+                                    <label>Pre-request Script <span
+                                            style="color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0">(runs
+                                            before sending)</span></label>
+                                    <textarea id="preRequestScript" class="code-input" rows="4" placeholder="// Modify the request before sending
+// request.headers.push({name: 'X-Custom', value: '123'});
+// return request;"></textarea>
+                                </div>
+                                <div class="field-row">
+                                    <label>Post-response Script <span
+                                            style="color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0">(runs
+                                            after receiving)</span></label>
+                                    <textarea id="postResponseScript" class="code-input" rows="4" placeholder="// Process or log the response
+// console.log('Status:', response.status);
+// return response;"></textarea>
+                                </div>
+                                <div class="field-row">
+                                    <label>Script Console</label>
+                                    <pre class="code-output" id="scriptConsoleOutput"
+                                        style="min-height:60px;max-height:150px;">Script output will appear here...</pre>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -369,7 +408,21 @@
                 <!-- Redirect Config -->
                 <div class="config-section" id="configRedirect">
                     <div class="field-row">
-                        <label>Redirect To</label>
+                        <label>Redirect Mode</label>
+                        <select id="redirectMode" class="select-input">
+                            <option value="full">Full Redirect — replace entire URL</option>
+                            <option value="replace">Replace Match — only replace matching part (like Requestly)</option>
+                        </select>
+                    </div>
+                    <div class="field-row" id="matchPatternRow" style="display:none;">
+                        <label>Match Pattern <span
+                                style="color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0">(use
+                                <code>*</code> as wildcard, or write a regex)</span></label>
+                        <input type="text" id="matchPattern" class="text-input"
+                            placeholder="e.g. https://api.old.com/*/endpoint  or  https://(.*)\.old\.com/(.*)">
+                    </div>
+                    <div class="field-row">
+                        <label id="redirectUrlLabel">Redirect To</label>
                         <input type="text" id="redirectUrl" class="text-input"
                             placeholder="https://new-url.com/endpoint">
                     </div>
@@ -435,6 +488,9 @@
     <input type="file" id="importFileInput" accept=".json" style="display:none;">
 
     <script src="dashboard.js"></script>
+
+    <!-- Sandbox iframe for script execution -->
+    <iframe id="scriptSandbox" src="../sandbox.html" style="display:none;" sandbox="allow-scripts"></iframe>
 </body>
 
 </html>
