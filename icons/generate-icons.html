@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Generate Nariya Fox Icons</title>
+<style>
+body { background: #222; color: #fff; font-family: sans-serif; padding: 20px; }
+canvas { border: 1px solid #555; margin: 10px; }
+a { color: #f97316; display: block; margin: 8px 0; }
+</style>
+</head>
+<body>
+<h2>Nariya Fox Icon Generator</h2>
+<p>Right-click each canvas below and "Save image as..." to save the icon PNGs.</p>
+<div id="icons"></div>
+<script>
+const sizes = [16, 48, 128];
+
+function drawFox(ctx, size) {
+  const s = size;
+  const cx = s / 2;
+  const cy = s / 2;
+
+  // Clear
+  ctx.clearRect(0, 0, s, s);
+
+  // Background - rounded square
+  const r = s * 0.15;
+  ctx.beginPath();
+  ctx.moveTo(r, 0);
+  ctx.lineTo(s - r, 0);
+  ctx.quadraticCurveTo(s, 0, s, r);
+  ctx.lineTo(s, s - r);
+  ctx.quadraticCurveTo(s, s, s - r, s);
+  ctx.lineTo(r, s);
+  ctx.quadraticCurveTo(0, s, 0, s - r);
+  ctx.lineTo(0, r);
+  ctx.quadraticCurveTo(0, 0, r, 0);
+  ctx.closePath();
+  ctx.fillStyle = '#0a0a14';
+  ctx.fill();
+
+  // Scale factor
+  const f = s / 128;
+
+  // Fox head shape
+  // Left ear
+  ctx.beginPath();
+  ctx.moveTo(25 * f, 85 * f);
+  ctx.lineTo(18 * f, 22 * f);
+  ctx.lineTo(50 * f, 52 * f);
+  ctx.closePath();
+  const earGrad1 = ctx.createLinearGradient(18 * f, 22 * f, 50 * f, 85 * f);
+  earGrad1.addColorStop(0, '#fb923c');
+  earGrad1.addColorStop(1, '#f97316');
+  ctx.fillStyle = earGrad1;
+  ctx.fill();
+
+  // Right ear
+  ctx.beginPath();
+  ctx.moveTo(103 * f, 85 * f);
+  ctx.lineTo(110 * f, 22 * f);
+  ctx.lineTo(78 * f, 52 * f);
+  ctx.closePath();
+  const earGrad2 = ctx.createLinearGradient(110 * f, 22 * f, 78 * f, 85 * f);
+  earGrad2.addColorStop(0, '#fb923c');
+  earGrad2.addColorStop(1, '#f97316');
+  ctx.fillStyle = earGrad2;
+  ctx.fill();
+
+  // Inner ear left
+  ctx.beginPath();
+  ctx.moveTo(30 * f, 75 * f);
+  ctx.lineTo(26 * f, 38 * f);
+  ctx.lineTo(47 * f, 57 * f);
+  ctx.closePath();
+  ctx.fillStyle = '#ea580c';
+  ctx.fill();
+
+  // Inner ear right
+  ctx.beginPath();
+  ctx.moveTo(98 * f, 75 * f);
+  ctx.lineTo(102 * f, 38 * f);
+  ctx.lineTo(81 * f, 57 * f);
+  ctx.closePath();
+  ctx.fillStyle = '#ea580c';
+  ctx.fill();
+
+  // Face
+  ctx.beginPath();
+  ctx.moveTo(25 * f, 85 * f);
+  ctx.quadraticCurveTo(25 * f, 60 * f, 45 * f, 55 * f);
+  ctx.quadraticCurveTo(64 * f, 48 * f, 83 * f, 55 * f);
+  ctx.quadraticCurveTo(103 * f, 60 * f, 103 * f, 85 * f);
+  ctx.quadraticCurveTo(100 * f, 105 * f, 64 * f, 112 * f);
+  ctx.quadraticCurveTo(28 * f, 105 * f, 25 * f, 85 * f);
+  ctx.closePath();
+  const faceGrad = ctx.createLinearGradient(cx, 48 * f, cx, 112 * f);
+  faceGrad.addColorStop(0, '#f97316');
+  faceGrad.addColorStop(1, '#ea580c');
+  ctx.fillStyle = faceGrad;
+  ctx.fill();
+
+  // White muzzle / cheek patches
+  ctx.beginPath();
+  ctx.moveTo(40 * f, 82 * f);
+  ctx.quadraticCurveTo(50 * f, 72 * f, 64 * f, 75 * f);
+  ctx.quadraticCurveTo(78 * f, 72 * f, 88 * f, 82 * f);
+  ctx.quadraticCurveTo(84 * f, 100 * f, 64 * f, 108 * f);
+  ctx.quadraticCurveTo(44 * f, 100 * f, 40 * f, 82 * f);
+  ctx.closePath();
+  ctx.fillStyle = '#fff5e0';
+  ctx.fill();
+
+  // Eyes
+  const eyeSize = 5 * f;
+  // Left eye
+  ctx.beginPath();
+  ctx.ellipse(48 * f, 76 * f, eyeSize, eyeSize * 1.2, 0, 0, Math.PI * 2);
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fill();
+  // Eye shine
+  ctx.beginPath();
+  ctx.ellipse(46 * f, 74 * f, eyeSize * 0.3, eyeSize * 0.3, 0, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+
+  // Right eye
+  ctx.beginPath();
+  ctx.ellipse(80 * f, 76 * f, eyeSize, eyeSize * 1.2, 0, 0, Math.PI * 2);
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fill();
+  // Eye shine
+  ctx.beginPath();
+  ctx.ellipse(78 * f, 74 * f, eyeSize * 0.3, eyeSize * 0.3, 0, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+
+  // Nose
+  ctx.beginPath();
+  ctx.moveTo(60 * f, 88 * f);
+  ctx.lineTo(68 * f, 88 * f);
+  ctx.lineTo(64 * f, 93 * f);
+  ctx.closePath();
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fill();
+}
+
+const container = document.getElementById('icons');
+sizes.forEach(size => {
+  const label = document.createElement('div');
+  label.textContent = `${size}x${size}:`;
+  container.appendChild(label);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  canvas.style.width = Math.max(size, 64) + 'px';
+  canvas.style.height = Math.max(size, 64) + 'px';
+  canvas.style.imageRendering = 'pixelated';
+  const ctx = canvas.getContext('2d');
+  drawFox(ctx, size);
+  container.appendChild(canvas);
+
+  // Create download link
+  const link = document.createElement('a');
+  link.download = `icon${size}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.textContent = `Download icon${size}.png`;
+  container.appendChild(link);
+});
+</script>
+</body>
+</html>

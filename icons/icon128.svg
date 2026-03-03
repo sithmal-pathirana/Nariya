@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="earGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#fb923c"/>
+      <stop offset="100%" style="stop-color:#f97316"/>
+    </linearGradient>
+    <linearGradient id="faceGrad" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" style="stop-color:#f97316"/>
+      <stop offset="100%" style="stop-color:#ea580c"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="128" height="128" rx="19" fill="#0a0a14"/>
+  <!-- Left ear -->
+  <polygon points="25,85 18,22 50,52" fill="url(#earGrad)"/>
+  <!-- Right ear -->
+  <polygon points="103,85 110,22 78,52" fill="url(#earGrad)"/>
+  <!-- Inner ears -->
+  <polygon points="30,75 26,38 47,57" fill="#ea580c"/>
+  <polygon points="98,75 102,38 81,57" fill="#ea580c"/>
+  <!-- Face -->
+  <path d="M25,85 Q25,60 45,55 Q64,48 83,55 Q103,60 103,85 Q100,105 64,112 Q28,105 25,85 Z" fill="url(#faceGrad)"/>
+  <!-- Muzzle -->
+  <path d="M40,82 Q50,72 64,75 Q78,72 88,82 Q84,100 64,108 Q44,100 40,82 Z" fill="#fff5e0"/>
+  <!-- Left eye -->
+  <ellipse cx="48" cy="76" rx="5" ry="6" fill="#1a1a2e"/>
+  <ellipse cx="46.5" cy="74" rx="1.5" ry="1.5" fill="#fff"/>
+  <!-- Right eye -->
+  <ellipse cx="80" cy="76" rx="5" ry="6" fill="#1a1a2e"/>
+  <ellipse cx="78.5" cy="74" rx="1.5" ry="1.5" fill="#fff"/>
+  <!-- Nose -->
+  <polygon points="60,88 68,88 64,93" fill="#1a1a2e"/>
+</svg>

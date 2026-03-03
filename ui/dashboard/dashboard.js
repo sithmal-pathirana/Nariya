@@ -272,6 +272,9 @@ function openRuleModal(rule = null) {
 
     // Reset configs
     document.getElementById('redirectUrl').value = rule?.config?.redirectUrl || '';
+    document.getElementById('redirectMode').value = rule?.config?.redirectMode || 'full';
+    document.getElementById('matchPattern').value = rule?.config?.matchPattern || '';
+    toggleRedirectMode(rule?.config?.redirectMode || 'full');
     document.getElementById('headerRequestConfig').value = rule?.config?.requestHeaders
         ? JSON.stringify(rule.config.requestHeaders, null, 2) : '';
     document.getElementById('headerResponseConfig').value = rule?.config?.responseHeaders
@@ -294,9 +297,24 @@ function closeRuleModal() {
 closeModalBtn.addEventListener('click', closeRuleModal);
 cancelRuleBtn.addEventListener('click', closeRuleModal);
 
-ruleModal.addEventListener('click', (e) => {
-    if (e.target === ruleModal) closeRuleModal();
-});
+// Toggle redirect mode UI
+const redirectModeSelect = document.getElementById('redirectMode');
+const matchPatternRow = document.getElementById('matchPatternRow');
+const redirectUrlLabel = document.getElementById('redirectUrlLabel');
+
+function toggleRedirectMode(mode) {
+    if (mode === 'replace') {
+        matchPatternRow.style.display = 'block';
+        redirectUrlLabel.textContent = 'Replace With';
+        document.getElementById('redirectUrl').placeholder = 'e.g. https://api.new.com/*/endpoint  or  https://\\1.new.com/\\2';
+    } else {
+        matchPatternRow.style.display = 'none';
+        redirectUrlLabel.textContent = 'Redirect To';
+        document.getElementById('redirectUrl').placeholder = 'https://new-url.com/endpoint';
+    }
+}
+
+redirectModeSelect.addEventListener('change', () => toggleRedirectMode(redirectModeSelect.value));
 
 ruleType.addEventListener('change', () => showConfigSection(ruleType.value));
 
@@ -315,7 +333,12 @@ saveRuleBtn.addEventListener('click', async () => {
     switch (type) {
         case 'redirect':
             config.redirectUrl = document.getElementById('redirectUrl').value.trim();
-            if (!config.redirectUrl) { alert('Redirect URL is required'); return; }
+            config.redirectMode = document.getElementById('redirectMode').value;
+            if (config.redirectMode === 'replace') {
+                config.matchPattern = document.getElementById('matchPattern').value.trim();
+                if (!config.matchPattern) { alert('Match pattern is required for Replace mode'); return; }
+            }
+            if (!config.redirectUrl) { alert('Redirect URL / replacement is required'); return; }
             break;
         case 'header':
             try {
@@ -543,6 +566,7 @@ respTabs.forEach(tab => {
         const which = tab.dataset.resp;
         document.getElementById('responseBody').style.display = which === 'body' ? 'block' : 'none';
         document.getElementById('responseHeaders').style.display = which === 'headers' ? 'block' : 'none';
+        document.getElementById('responseScripts').style.display = which === 'scripts' ? 'block' : 'none';
     });
 });
 
@@ -688,6 +712,106 @@ swapInputsBtn.addEventListener('click', () => {
     const tmp = comparerA.value;
     comparerA.value = comparerB.value;
     comparerB.value = tmp;
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  Sandbox Script Execution
+// ═══════════════════════════════════════════════════════════════════
+
+const scriptSandbox = document.getElementById('scriptSandbox');
+const scriptConsoleOutput = document.getElementById('scriptConsoleOutput');
+let sandboxCallbacks = {};
+let sandboxReady = false;
+
+// Listen for sandbox responses
+window.addEventListener('message', (event) => {
+    const { id, ok, data, error } = event.data || {};
+    if (id && sandboxCallbacks[id]) {
+        sandboxCallbacks[id]({ ok, data, error });
+        delete sandboxCallbacks[id];
+    }
+});
+
+// Wait for sandbox iframe to load
+scriptSandbox.addEventListener('load', () => { sandboxReady = true; });
+
+function runInSandbox(script, context = {}) {
+    return new Promise((resolve, reject) => {
+        if (!sandboxReady || !scriptSandbox.contentWindow) {
+            reject(new Error('Sandbox not ready'));
+            return;
+        }
+        const id = 'sb_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+        const timeout = setTimeout(() => {
+            delete sandboxCallbacks[id];
+            reject(new Error('Script execution timed out (10s)'));
+        }, 10000);
+
+        sandboxCallbacks[id] = (result) => {
+            clearTimeout(timeout);
+            resolve(result);
+        };
+
+        scriptSandbox.contentWindow.postMessage({ id, script, context }, '*');
+    });
+}
+
+function formatScriptLogs(logs) {
+    if (!logs || logs.length === 0) return '';
+    return logs.map(l => {
+        const prefix = l.level === 'error' ? '❌' : l.level === 'warn' ? '⚠️' : 'ℹ️';
+        return `${prefix} ${l.args.join(' ')}`;
+    }).join('\n');
+}
+
+function appendToConsole(text) {
+    if (scriptConsoleOutput.textContent === 'Script output will appear here...') {
+        scriptConsoleOutput.textContent = '';
+    }
+    scriptConsoleOutput.textContent += text + '\n';
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  Interceptor Script Runner
+// ═══════════════════════════════════════════════════════════════════
+
+document.getElementById('runInterceptorScriptBtn').addEventListener('click', async () => {
+    const script = document.getElementById('interceptorScript').value.trim();
+    if (!script) { alert('Write a script first'); return; }
+
+    const request = {
+        url: document.getElementById('editUrl').value,
+        method: document.getElementById('editMethod').value,
+        headers: {},
+        body: document.getElementById('editBody').value
+    };
+    try {
+        const headersRaw = document.getElementById('editHeaders').value.trim();
+        if (headersRaw) request.headers = JSON.parse(headersRaw);
+    } catch { }
+
+    try {
+        const result = await runInSandbox(script, { request });
+        if (result.ok && result.data) {
+            const logs = formatScriptLogs(result.data.logs);
+            if (logs) appendToConsole('[Interceptor Script]\n' + logs);
+            // Apply modifications back to the editor
+            if (result.data.request) {
+                const r = result.data.request;
+                if (r.url) document.getElementById('editUrl').value = r.url;
+                if (r.method) document.getElementById('editMethod').value = r.method;
+                if (r.headers) document.getElementById('editHeaders').value = JSON.stringify(r.headers, null, 2);
+                if (r.body) document.getElementById('editBody').value = r.body;
+            }
+            if (result.data.error) {
+                appendToConsole('❌ Script error: ' + result.data.error);
+            }
+        } else {
+            appendToConsole('❌ Sandbox error: ' + (result.error || 'Unknown'));
+        }
+    } catch (e) {
+        appendToConsole('❌ ' + e.message);
+    }
 });
 
 // ═══════════════════════════════════════════════════════════════════
