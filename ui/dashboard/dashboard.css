@@ -1060,6 +1060,41 @@ body {
     text-decoration: line-through;
 }
 
+/* ─── Header Mod Rows ────────────────────────────────────────── */
+
+.header-mod-row {
+    background: var(--bg-card);
+    border: 1px solid var(--border-glass);
+    padding: 6px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.header-mod-row select.mod-operation {
+    color: var(--accent);
+    font-weight: 600;
+    background-color: var(--bg-secondary);
+}
+
+.header-mod-row input.mod-value:disabled {
+    background: var(--bg-tertiary);
+    cursor: not-allowed;
+}
+
+.remove-mod-btn {
+    color: var(--text-muted);
+    font-size: 16px;
+    font-weight: bold;
+    padding: 0 4px;
+}
+
+.remove-mod-btn:hover {
+    color: var(--accent-red) !important;
+    background: var(--accent-red-dim) !important;
+}
+
 /* ─── Modal ──────────────────────────────────────────────────── */
 
 .modal-overlay {

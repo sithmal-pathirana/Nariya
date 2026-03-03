@@ -275,10 +275,24 @@ function openRuleModal(rule = null) {
     document.getElementById('redirectMode').value = rule?.config?.redirectMode || 'full';
     document.getElementById('matchPattern').value = rule?.config?.matchPattern || '';
     toggleRedirectMode(rule?.config?.redirectMode || 'full');
-    document.getElementById('headerRequestConfig').value = rule?.config?.requestHeaders
-        ? JSON.stringify(rule.config.requestHeaders, null, 2) : '';
-    document.getElementById('headerResponseConfig').value = rule?.config?.responseHeaders
-        ? JSON.stringify(rule.config.responseHeaders, null, 2) : '';
+    headerModsContainer.innerHTML = ''; // Clear previous rows
+
+    // Load existing request headers
+    if (rule?.config?.requestHeaders) {
+        rule.config.requestHeaders.forEach(h => {
+            headerModsContainer.appendChild(createHeaderModRow({ target: 'request', ...h }));
+        });
+    }
+    // Load existing response headers
+    if (rule?.config?.responseHeaders) {
+        rule.config.responseHeaders.forEach(h => {
+            headerModsContainer.appendChild(createHeaderModRow({ target: 'response', ...h }));
+        });
+    }
+    // If empty, add one default row
+    if (headerModsContainer.children.length === 0) {
+        headerModsContainer.appendChild(createHeaderModRow());
+    }
     document.getElementById('mockStatusCode').value = rule?.config?.statusCode || 200;
     document.getElementById('mockBody').value = rule?.config?.body || '';
     document.getElementById('delayMs').value = rule?.config?.delayMs || 1000;
@@ -316,6 +330,55 @@ function toggleRedirectMode(mode) {
 
 redirectModeSelect.addEventListener('change', () => toggleRedirectMode(redirectModeSelect.value));
 
+// ─── Header Rule Dynamic UI ───
+const headerModsContainer = document.getElementById('headerModsContainer');
+const addHeaderModBtn = document.getElementById('addHeaderModBtn');
+
+function createHeaderModRow(data = { target: 'response', operation: 'set', header: '', value: '' }) {
+    const row = document.createElement('div');
+    row.className = 'field-row inline header-mod-row';
+    row.style.alignItems = 'center';
+    row.style.marginBottom = '0';
+
+    row.innerHTML = `
+        <select class="select-input mod-operation" style="width: 100px;">
+            <option value="set" ${data.operation === 'set' ? 'selected' : ''}>Set</option>
+            <option value="append" ${data.operation === 'append' ? 'selected' : ''}>Append</option>
+            <option value="remove" ${data.operation === 'remove' ? 'selected' : ''}>Remove</option>
+        </select>
+        <select class="select-input mod-target" style="width: 140px;">
+            <option value="response" ${data.target === 'response' ? 'selected' : ''}>Response Header</option>
+            <option value="request" ${data.target === 'request' ? 'selected' : ''}>Request Header</option>
+        </select>
+        <input type="text" class="text-input mod-header flex-1" placeholder="Header name (e.g. content-security-policy)" value="${escapeHtml(data.header)}">
+        <input type="text" class="text-input mod-value flex-1" placeholder="Value" value="${escapeHtml(data.value || '')}" ${data.operation === 'remove' ? 'disabled style="opacity:0.5"' : ''}>
+        <button class="btn-sm delete remove-mod-btn" type="button" title="Remove">
+            &times;
+        </button>
+    `;
+
+    // Disable value input if operation is 'remove'
+    const opSelect = row.querySelector('.mod-operation');
+    const valInput = row.querySelector('.mod-value');
+    opSelect.addEventListener('change', () => {
+        if (opSelect.value === 'remove') {
+            valInput.disabled = true;
+            valInput.style.opacity = '0.5';
+            valInput.value = '';
+        } else {
+            valInput.disabled = false;
+            valInput.style.opacity = '1';
+        }
+    });
+
+    row.querySelector('.remove-mod-btn').addEventListener('click', () => row.remove());
+    return row;
+}
+
+addHeaderModBtn.addEventListener('click', () => {
+    headerModsContainer.appendChild(createHeaderModRow());
+});
+
 ruleType.addEventListener('change', () => showConfigSection(ruleType.value));
 
 function showConfigSection(type) {
@@ -341,12 +404,28 @@ saveRuleBtn.addEventListener('click', async () => {
             if (!config.redirectUrl) { alert('Redirect URL / replacement is required'); return; }
             break;
         case 'header':
-            try {
-                const reqH = document.getElementById('headerRequestConfig').value.trim();
-                const resH = document.getElementById('headerResponseConfig').value.trim();
-                if (reqH) config.requestHeaders = JSON.parse(reqH);
-                if (resH) config.responseHeaders = JSON.parse(resH);
-            } catch { alert('Invalid JSON in header config'); return; }
+            config.requestHeaders = [];
+            config.responseHeaders = [];
+
+            document.querySelectorAll('.header-mod-row').forEach(row => {
+                const operation = row.querySelector('.mod-operation').value;
+                const target = row.querySelector('.mod-target').value;
+                const header = row.querySelector('.mod-header').value.trim();
+                const value = row.querySelector('.mod-value').value.trim();
+
+                if (!header) return; // Skip empty rows
+
+                const mod = { header, operation };
+                if (operation !== 'remove') mod.value = value;
+
+                if (target === 'request') config.requestHeaders.push(mod);
+                else config.responseHeaders.push(mod);
+            });
+
+            if (config.requestHeaders.length === 0 && config.responseHeaders.length === 0) {
+                alert('Please add at least one valid header modification.');
+                return;
+            }
             break;
         case 'mock':
             config.statusCode = parseInt(document.getElementById('mockStatusCode').value) || 200;

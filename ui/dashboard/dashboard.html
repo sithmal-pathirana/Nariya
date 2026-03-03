@@ -431,17 +431,19 @@
                 <!-- Header Config -->
                 <div class="config-section" id="configHeader" style="display:none;">
                     <div class="field-row">
-                        <label>Request Headers (JSON array)</label>
-                        <textarea id="headerRequestConfig" class="code-input" rows="4"
-                            placeholder='[{"header":"X-Custom","operation":"set","value":"test"}]'></textarea>
-                    </div>
-                    <div class="field-row">
-                        <label>Response Headers (JSON array)</label>
-                        <textarea id="headerResponseConfig" class="code-input" rows="4"
-                            placeholder='[{"header":"Access-Control-Allow-Origin","operation":"set","value":"*"}]'></textarea>
+                        <label>Header Modifications</label>
+                        <div id="headerModsContainer"
+                            style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px;">
+                        </div>
+                        <button type="button" class="btn btn-ghost" id="addHeaderModBtn" style="width: max-content;">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round">
+                                <path d="M8 2v12M2 8h12" />
+                            </svg>
+                            Add Modification
+                        </button>
                     </div>
                 </div>
-
                 <!-- Mock Config -->
                 <div class="config-section" id="configMock" style="display:none;">
                     <div class="field-row">
