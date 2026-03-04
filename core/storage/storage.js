@@ -3,6 +3,8 @@
  * Thin abstraction over chrome.storage.local for rule persistence.
  */
 
+import { sanitizeRule, sanitizeImportedRules } from './sanitizer.js';
+
 const STORAGE_KEY = 'nariya_rules';
 const SETTINGS_KEY = 'nariya_settings';
 
@@ -13,7 +15,8 @@ const DEFAULT_SETTINGS = {
   globalEnabled: true,
   interceptorAutoForward: false,
   maxRepeaterHistory: 500,
-  theme: 'dark'
+  theme: 'dark',
+  allowCorsBypass: true
 };
 
 /**
@@ -37,8 +40,9 @@ export async function getAllRules() {
  * @param {Object} rule
  * @returns {Promise<Object>} The saved rule with ID
  */
-export async function saveRule(rule) {
+export async function saveRule(rawRule) {
   const rules = await getAllRules();
+  const rule = sanitizeRule(rawRule);
 
   if (rule.id) {
     // Update existing
@@ -123,8 +127,10 @@ export async function importRules(importedRules) {
   const existing = await getAllRules();
   const existingIds = new Set(existing.map(r => r.id));
 
+  const sanitizedRules = sanitizeImportedRules(importedRules);
+
   let count = 0;
-  for (const rule of importedRules) {
+  for (const rule of sanitizedRules) {
     if (!existingIds.has(rule.id)) {
       rule.id = rule.id || generateId();
       rule.createdAt = rule.createdAt || Date.now();
