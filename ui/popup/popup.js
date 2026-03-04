@@ -3,15 +3,8 @@
  * Manages the popup UI: global toggle, rule list, stats, and navigation.
  */
 
-// ─── Messaging Helper ──────────────────────────────────────────
-
-function sendMessage(type, payload = {}) {
-    return new Promise((resolve) => {
-        chrome.runtime.sendMessage({ type, payload }, (response) => {
-            resolve(response || { ok: false });
-        });
-    });
-}
+import { sendMessage } from '../shared/messaging.js';
+import { escapeHtml } from '../shared/utils.js';
 
 // ─── DOM References ──────────────────────────────────────────────
 
@@ -108,10 +101,3 @@ openDashboardBtn.addEventListener('click', () => {
     chrome.runtime.openOptionsPage();
 });
 
-// ─── Utilities ───────────────────────────────────────────────────
-
-function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-}

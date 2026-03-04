@@ -173,9 +173,10 @@ function compileRule(rule, ruleId) {
 /**
  * Compile all user rules into DNR rules
  * @param {Array} userRules - All rules from storage
+ * @param {Object} settings - User settings including allowCorsBypass
  * @returns {Array} Compiled DNR rules
  */
-export function compileAllRules(userRules) {
+export function compileAllRules(userRules, settings = {}) {
     const dnrRules = [];
     let ruleId = RULE_ID_BASE;
 
@@ -187,22 +188,24 @@ export function compileAllRules(userRules) {
         }
     }
 
-    dnrRules.push({
-        id: ruleId++,
-        priority: 1,
-        action: {
-            type: 'modifyHeaders',
-            responseHeaders: [
-                { header: 'Access-Control-Allow-Origin', operation: 'set', value: '*' },
-                { header: 'Access-Control-Allow-Methods', operation: 'set', value: '*' },
-                { header: 'Access-Control-Allow-Headers', operation: 'set', value: '*' }
-            ]
-        },
-        condition: {
-            urlFilter: '*', // Apply to all URLs
-            resourceTypes: ['xmlhttprequest', 'other'] // Target fetch/XHR API calls
-        }
-    });
+    if (settings.allowCorsBypass) {
+        dnrRules.push({
+            id: ruleId++,
+            priority: 1,
+            action: {
+                type: 'modifyHeaders',
+                responseHeaders: [
+                    { header: 'Access-Control-Allow-Origin', operation: 'set', value: '*' },
+                    { header: 'Access-Control-Allow-Methods', operation: 'set', value: '*' },
+                    { header: 'Access-Control-Allow-Headers', operation: 'set', value: '*' }
+                ]
+            },
+            condition: {
+                urlFilter: '*', // Apply to all URLs
+                resourceTypes: ['xmlhttprequest', 'other'] // Target fetch/XHR API calls
+            }
+        });
+    }
 
     return dnrRules;
 }

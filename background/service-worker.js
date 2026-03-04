@@ -4,10 +4,11 @@
  * and communication between all extension components.
  */
 
-import { getAllRules, getSettings, saveRule, deleteRule, toggleRule, importRules, exportRules, clearAllRules, updateSettings } from '../lib/storage.js';
-import { compileAllRules, applyRules, clearAllDnrRules, getInterceptorRules, getScriptRules } from '../lib/rules-engine.js';
-import * as debuggerProxy from '../lib/debugger-proxy.js';
-import * as repeater from '../lib/repeater.js';
+import { getAllRules, getSettings } from '../core/storage/storage.js';
+import { compileAllRules, applyRules, clearAllDnrRules, getInterceptorRules, getScriptRules } from '../core/rules-engine.js';
+import * as debuggerProxy from '../core/debugger-proxy.js';
+import * as repeater from '../core/repeater.js';
+import { handleUIMessage } from './message-router.js';
 
 // ═══════════════════════════════════════════════════════════════════
 //  Initialization
@@ -49,7 +50,7 @@ async function syncRules() {
     const allRules = await getAllRules();
 
     // 1. Compile & apply DNR rules (redirect, header)
-    const dnrRules = compileAllRules(allRules);
+    const dnrRules = compileAllRules(allRules, settings);
     await applyRules(dnrRules);
 
     // 2. Push interceptor rules (mock, delay) to content scripts
@@ -98,7 +99,7 @@ async function injectInterceptor(tabId) {
 }
 
 /**
- * Inject user-defined custom scripts/CSS
+ * Inject user-defined custom scripts/CSS safely into ISOLATED world
  */
 async function injectCustomScripts(scriptRules) {
     for (const rule of scriptRules) {
@@ -112,11 +113,19 @@ async function injectCustomScripts(scriptRules) {
                 if (!tab.id) continue;
 
                 if (config.js) {
+                    // Executing script within ISOLATED world avoiding direct eval()
                     await chrome.scripting.executeScript({
                         target: { tabId: tab.id },
-                        func: (code) => { eval(code); },
+                        func: (code) => {
+                            try {
+                                const fn = new Function(code);
+                                fn();
+                            } catch (e) {
+                                console.error('[Nariya Script Error]', e);
+                            }
+                        },
                         args: [config.js],
-                        world: config.world || 'MAIN'
+                        world: config.world || 'ISOLATED' // Enforce ISOLATED world for security
                     });
                 }
 
@@ -227,8 +236,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return;
     }
 
-    // Handle UI messages (from popup / dashboard)
-    handleUIMessage(message, sender, sendResponse);
+    // Handle UI messages via the router
+    handleUIMessage(message, sender, sendResponse, syncRules);
     return true; // Keep channel open for async responses
 });
 
@@ -245,179 +254,6 @@ function handleBridgeMessage(message) {
                 });
             }
             break;
-    }
-}
-
-async function handleUIMessage(message, sender, sendResponse) {
-    try {
-        switch (message.type) {
-
-            // ── Rule Management ─────────────────────────────────────
-            case 'GET_ALL_RULES': {
-                const rules = await getAllRules();
-                sendResponse({ ok: true, data: rules });
-                break;
-            }
-
-            case 'SAVE_RULE': {
-                const rule = await saveRule(message.payload);
-                await syncRules();
-                sendResponse({ ok: true, data: rule });
-                break;
-            }
-
-            case 'DELETE_RULE': {
-                await deleteRule(message.payload.id);
-                await syncRules();
-                sendResponse({ ok: true });
-                break;
-            }
-
-            case 'TOGGLE_RULE': {
-                await toggleRule(message.payload.id, message.payload.enabled);
-                await syncRules();
-                sendResponse({ ok: true });
-                break;
-            }
-
-            case 'IMPORT_RULES': {
-                const count = await importRules(message.payload.rules);
-                await syncRules();
-                sendResponse({ ok: true, data: { imported: count } });
-                break;
-            }
-
-            case 'EXPORT_RULES': {
-                const json = await exportRules();
-                sendResponse({ ok: true, data: json });
-                break;
-            }
-
-            case 'CLEAR_ALL_RULES': {
-                await clearAllRules();
-                await syncRules();
-                sendResponse({ ok: true });
-                break;
-            }
-
-            // ── Settings ────────────────────────────────────────────
-            case 'GET_SETTINGS': {
-                const settings = await getSettings();
-                sendResponse({ ok: true, data: settings });
-                break;
-            }
-
-            case 'UPDATE_SETTINGS': {
-                const updated = await updateSettings(message.payload);
-                await syncRules();
-                sendResponse({ ok: true, data: updated });
-                break;
-            }
-
-            // ── Debugger Proxy ──────────────────────────────────────
-            case 'DEBUGGER_ATTACH': {
-                await debuggerProxy.attach(message.payload.tabId, message.payload.options);
-                sendResponse({ ok: true });
-                break;
-            }
-
-            case 'DEBUGGER_DETACH': {
-                await debuggerProxy.detach(message.payload.tabId);
-                sendResponse({ ok: true });
-                break;
-            }
-
-            case 'DEBUGGER_IS_ATTACHED': {
-                const attached = debuggerProxy.isAttached(message.payload.tabId);
-                sendResponse({ ok: true, data: { attached } });
-                break;
-            }
-
-            case 'DEBUGGER_CONTINUE_REQUEST': {
-                await debuggerProxy.continueRequest(
-                    message.payload.tabId,
-                    message.payload.requestId,
-                    message.payload.modifications
-                );
-                sendResponse({ ok: true });
-                break;
-            }
-
-            case 'DEBUGGER_CONTINUE_RESPONSE': {
-                await debuggerProxy.continueResponse(
-                    message.payload.tabId,
-                    message.payload.requestId,
-                    message.payload.modifications
-                );
-                sendResponse({ ok: true });
-                break;
-            }
-
-            case 'DEBUGGER_GET_RESPONSE_BODY': {
-                const body = await debuggerProxy.getResponseBody(
-                    message.payload.tabId,
-                    message.payload.requestId
-                );
-                sendResponse({ ok: true, data: body });
-                break;
-            }
-
-            case 'DEBUGGER_GET_PAUSED': {
-                const paused = debuggerProxy.getPausedRequests(message.payload.tabId);
-                const entries = Array.from(paused.values());
-                sendResponse({ ok: true, data: entries });
-                break;
-            }
-
-            case 'DEBUGGER_GET_ATTACHED_TABS': {
-                const tabs = debuggerProxy.getAttachedTabs();
-                sendResponse({ ok: true, data: tabs });
-                break;
-            }
-
-            // ── Repeater ────────────────────────────────────────────
-            case 'REPEATER_GET_HISTORY': {
-                const history = repeater.getHistory(message.payload || {});
-                sendResponse({ ok: true, data: history });
-                break;
-            }
-
-            case 'REPEATER_REPLAY': {
-                const entry = message.payload.entry;
-                const overrides = message.payload.overrides || {};
-                const result = await repeater.replay(entry, overrides);
-                sendResponse({ ok: true, data: result });
-                break;
-            }
-
-            case 'REPEATER_CLEAR': {
-                repeater.clearHistory();
-                sendResponse({ ok: true });
-                break;
-            }
-
-            // ── Misc ────────────────────────────────────────────────
-            case 'GET_ACTIVE_TAB': {
-                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-                sendResponse({ ok: true, data: tab });
-                break;
-            }
-
-            case 'GET_ALL_TABS': {
-                const tabs = await chrome.tabs.query({});
-                sendResponse({
-                    ok: true,
-                    data: tabs.map(t => ({ id: t.id, title: t.title, url: t.url }))
-                });
-                break;
-            }
-
-            default:
-                sendResponse({ ok: false, error: `Unknown message type: ${message.type}` });
-        }
-    } catch (err) {
-        console.error('[Nariya] Message handler error:', err);
-        sendResponse({ ok: false, error: err.message });
     }
 }
 

@@ -58,11 +58,20 @@
             </div>
 
             <div class="sidebar-footer">
-                <label class="toggle-switch" title="Global Enable/Disable">
-                    <input type="checkbox" id="globalToggle" checked>
-                    <span class="slider"></span>
-                </label>
-                <span class="sidebar-footer-label">Enabled</span>
+                <div class="sidebar-toggle-row">
+                    <label class="toggle-switch" title="Global Enable/Disable">
+                        <input type="checkbox" id="globalToggle" checked>
+                        <span class="slider"></span>
+                    </label>
+                    <span class="sidebar-footer-label">Enabled</span>
+                </div>
+                <div class="sidebar-toggle-row">
+                    <label class="toggle-switch" title="CORS Bypass">
+                        <input type="checkbox" id="corsToggle" checked>
+                        <span class="slider"></span>
+                    </label>
+                    <span class="sidebar-footer-label">CORS Bypass</span>
+                </div>
             </div>
         </nav>
 
@@ -489,10 +498,10 @@
     <!-- Hidden file input for import -->
     <input type="file" id="importFileInput" accept=".json" style="display:none;">
 
-    <script src="dashboard.js"></script>
+    <script type="module" src="dashboard.js"></script>
 
     <!-- Sandbox iframe for script execution -->
-    <iframe id="scriptSandbox" src="../sandbox.html" style="display:none;" sandbox="allow-scripts"></iframe>
+    <iframe id="scriptSandbox" src="../../sandbox/sandbox.html" style="display:none;" sandbox="allow-scripts"></iframe>
 </body>
 
 </html>
