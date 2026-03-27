@@ -55,6 +55,20 @@
                     </svg>
                     <span>Comparer</span>
                 </button>
+                <button class="nav-item" data-tab="analyzer">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                    </svg>
+                    <span>Analyzer</span>
+                </button>
+                <button class="nav-item" data-tab="logs">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="4" y1="6" x2="20" y2="6"></line>
+                        <line x1="4" y1="12" x2="20" y2="12"></line>
+                        <line x1="4" y1="18" x2="20" y2="18"></line>
+                    </svg>
+                    <span>Logs</span>
+                </button>
             </div>
 
             <div class="sidebar-footer">
@@ -174,6 +188,28 @@
                     <div class="interceptor-status" id="interceptorStatus">
                         <div class="status-indicator offline"></div>
                         <span>Not attached to any tab</span>
+                    </div>
+
+                    <!-- Auto-Mutate Script -->
+                    <div class="request-editor" id="autoMutatePanel" style="margin-bottom: 8px;">
+                        <div class="panel-header"
+                            style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+                            <h3 style="margin-bottom: 0;">Auto-Mutate Script</h3>
+                            <div class="field-row inline" style="margin-bottom: 0;">
+                                <label class="toggle-switch" title="Enable Auto-Mutate">
+                                    <input type="checkbox" id="autoMutateToggle">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="field-row">
+                            <textarea id="autoMutateScript" class="code-input" rows="3" placeholder="// Runs automatically on intercepted requests before they pause.
+// Modify `request` and return it.
+// e.g. request.headers['x-added'] = 'true'; return request;"></textarea>
+                        </div>
+                        <div class="editor-actions">
+                            <button class="btn btn-primary" id="saveAutoMutateBtn">Save Auto-Mutate</button>
+                        </div>
                     </div>
 
                     <!-- Paused Requests -->
@@ -384,6 +420,62 @@
                 </div>
             </section>
 
+            <!-- ─── Analyzer Tab ─── -->
+            <section class="tab-panel" id="tab-analyzer">
+                <div class="panel-header">
+                    <h1>Request Analyzer</h1>
+                    <div class="panel-actions">
+                        <button class="btn btn-ghost" id="clearAnalyzerBtn">Clear Issues</button>
+                    </div>
+                </div>
+
+                <div class="analyzer-layout" style="display: flex; flex-direction: column; gap: 16px;">
+                    <div class="analyzer-stats" id="analyzerStats" style="display: flex; gap: 16px;">
+                        <div class="stat-card"
+                            style="background: var(--bg-tertiary); padding: 16px; border-radius: var(--radius); flex: 1;">
+                            <div style="font-size: 24px; font-weight: 600; color: var(--danger);"
+                                id="analyzerHighCount">0</div>
+                            <div style="color: var(--text-muted); font-size: 13px;">High Severity</div>
+                        </div>
+                        <div class="stat-card"
+                            style="background: var(--bg-tertiary); padding: 16px; border-radius: var(--radius); flex: 1;">
+                            <div style="font-size: 24px; font-weight: 600; color: var(--warning);"
+                                id="analyzerMediumCount">0</div>
+                            <div style="color: var(--text-muted); font-size: 13px;">Medium Severity</div>
+                        </div>
+                        <div class="stat-card"
+                            style="background: var(--bg-tertiary); padding: 16px; border-radius: var(--radius); flex: 1;">
+                            <div style="font-size: 24px; font-weight: 600; color: var(--info);" id="analyzerLowCount">0
+                            </div>
+                            <div style="color: var(--text-muted); font-size: 13px;">Low Severity</div>
+                        </div>
+                    </div>
+
+                    <div class="analyzer-issues" id="analyzerIssuesList"
+                        style="flex: 1; display: flex; flex-direction: column; gap: 8px;">
+                        <div class="empty-state">No issues detected yet. Browse the web to populate analysis data.</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ─── Logs Tab ─── -->
+            <section class="tab-panel" id="tab-logs">
+                <div class="panel-header">
+                    <h1>Execution Logs</h1>
+                    <div class="panel-actions">
+                        <button class="btn btn-ghost" id="clearLogsBtn">Clear Logs</button>
+                    </div>
+                </div>
+
+                <div class="logs-layout" style="display: flex; flex-direction: column; gap: 16px;">
+                    <div class="logs-list" id="executionLogsList"
+                        style="flex: 1; display: flex; flex-direction: column; gap: 8px;">
+                        <div class="empty-state">No rules have been executed yet. Keep the extension active and browse.
+                        </div>
+                    </div>
+                </div>
+            </section>
+
         </main>
     </div>
 
@@ -402,11 +494,10 @@
                 <div class="field-row">
                     <label>Rule Type</label>
                     <select id="ruleType" class="select-input">
-                        <option value="redirect">Redirect URL</option>
+                        <option value="redirect">Redirect / Replace</option>
                         <option value="header">Modify Headers</option>
-                        <option value="mock">Mock API Response</option>
+                        <option value="mock">Mock Response</option>
                         <option value="delay">Delay Request</option>
-                        <option value="script">Inject Script</option>
                     </select>
                 </div>
                 <div class="field-row">

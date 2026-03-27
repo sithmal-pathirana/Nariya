@@ -5,10 +5,13 @@
  */
 
 import { getAllRules, getSettings } from '../core/storage/storage.js';
-import { compileAllRules, applyRules, clearAllDnrRules, getInterceptorRules, getScriptRules } from '../core/rules-engine.js';
+import { compileAllRules, applyRules, clearAllDnrRules, getInterceptorRules, activeRuleMap } from '../core/rules-engine.js';
 import * as debuggerProxy from '../core/debugger-proxy.js';
 import * as repeater from '../core/repeater.js';
+import * as analyzer from '../core/analyzer.js';
+import * as executionLogs from '../core/execution-logs.js';
 import { handleUIMessage } from './message-router.js';
+import { runInSandbox } from './offscreen-manager.js';
 
 // ═══════════════════════════════════════════════════════════════════
 //  Initialization
@@ -60,10 +63,6 @@ async function syncRules() {
         type: 'UPDATE_INTERCEPTOR_RULES',
         payload: { rules: interceptorRules }
     });
-
-    // 3. Inject custom scripts
-    const scriptRules = getScriptRules(allRules);
-    await injectCustomScripts(scriptRules);
 }
 
 /**
@@ -98,50 +97,6 @@ async function injectInterceptor(tabId) {
     }
 }
 
-/**
- * Inject user-defined custom scripts/CSS safely into ISOLATED world
- */
-async function injectCustomScripts(scriptRules) {
-    for (const rule of scriptRules) {
-        const config = rule.config || {};
-        const urlPattern = rule.urlFilter || '<all_urls>';
-
-        try {
-            const tabs = await chrome.tabs.query({ url: urlPattern });
-
-            for (const tab of tabs) {
-                if (!tab.id) continue;
-
-                if (config.js) {
-                    // Executing script within ISOLATED world avoiding direct eval()
-                    await chrome.scripting.executeScript({
-                        target: { tabId: tab.id },
-                        func: (code) => {
-                            try {
-                                const fn = new Function(code);
-                                fn();
-                            } catch (e) {
-                                console.error('[Nariya Script Error]', e);
-                            }
-                        },
-                        args: [config.js],
-                        world: config.world || 'ISOLATED' // Enforce ISOLATED world for security
-                    });
-                }
-
-                if (config.css) {
-                    await chrome.scripting.insertCSS({
-                        target: { tabId: tab.id },
-                        css: config.css
-                    });
-                }
-            }
-        } catch (e) {
-            console.warn(`[Nariya] Script injection error for rule ${rule.id}:`, e);
-        }
-    }
-}
-
 // ═══════════════════════════════════════════════════════════════════
 //  Tab Events — inject interceptor on navigation
 // ═══════════════════════════════════════════════════════════════════
@@ -168,48 +123,77 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
             }).catch(() => { });
         }, 100);
     }
-
-    // Inject custom scripts for matching tabs
-    const scriptRules = getScriptRules(allRules);
-    const matchingScripts = scriptRules.filter(r => {
-        if (!r.urlFilter) return true;
-        try {
-            return tab.url.includes(r.urlFilter) ||
-                new RegExp(r.urlFilter.replace(/\*/g, '.*')).test(tab.url);
-        } catch {
-            return false;
-        }
-    });
-
-    if (matchingScripts.length > 0) {
-        await injectCustomScripts(matchingScripts);
-    }
 });
 
 // ═══════════════════════════════════════════════════════════════════
 //  Debugger Proxy Callbacks
 // ═══════════════════════════════════════════════════════════════════
 
-debuggerProxy.setOnRequestPaused((tabId, params) => {
-    // Log to repeater history
+debuggerProxy.setOnRequestPaused(async (tabId, params) => {
+    let requestToForward = null;
+    let autoFinished = false;
+
+    // 1. Check auto-mutate script
+    const settings = await getSettings();
+    if (settings.interceptorAutoMutate && settings.interceptorAutoMutateScript) {
+        try {
+            const result = await runInSandbox(settings.interceptorAutoMutateScript, { request: params.request });
+            if (result.ok && result.data && result.data.request) {
+                const req = result.data.request;
+                const mods = {
+                    url: req.url,
+                    method: req.method,
+                    postData: req.body || req.postData,
+                    headers: Object.entries(req.headers || {}).map(([name, value]) => ({ name, value }))
+                };
+                await debuggerProxy.continueRequest(tabId, params.requestId, mods);
+                autoFinished = true;
+                requestToForward = req;
+            }
+        } catch (e) {
+            console.error('[Nariya] Auto-mutate script failed:', e);
+        }
+    }
+
+    // 2. Log to repeater history
     const entry = {
-        url: params.request?.url || '',
-        method: params.request?.method || 'GET',
-        headers: Object.entries(params.request?.headers || {}).map(([name, value]) => ({ name, value })),
-        body: params.request?.postData || null,
-        source: 'interceptor-proxy',
+        url: requestToForward?.url || params.request?.url || '',
+        method: requestToForward?.method || params.request?.method || 'GET',
+        headers: Object.entries(requestToForward?.headers || params.request?.headers || {}).map(([name, value]) => ({ name, value })),
+        body: requestToForward?.body || requestToForward?.postData || params.request?.postData || null,
+        source: autoFinished ? 'interceptor-auto' : 'interceptor-proxy',
         timestamp: Date.now()
     };
     repeater.addToHistory(entry);
 
-    // Notify connected dashboard UIs
-    broadcastToExtensionPages({
-        type: 'REQUEST_PAUSED',
-        payload: { tabId, ...params, historyEntry: entry }
-    });
+    // 3. Notify connected dashboard UIs (if we didn't auto-forward)
+    if (!autoFinished) {
+        broadcastToExtensionPages({
+            type: 'REQUEST_PAUSED',
+            payload: { tabId, ...params, historyEntry: entry }
+        });
+    }
 });
 
 debuggerProxy.setOnResponseReceived((tabId, params) => {
+    // 1. Analyze for security vulnerabilities and best practices
+    const entry = {
+        url: params.response?.url || '',
+        method: 'GET', // Method is unfortunately not usually present in response Received payload
+        requestHeaders: Object.entries(params.response?.requestHeaders || {}).map(([name, value]) => ({ name, value })),
+        responseHeaders: Object.entries(params.response?.headers || {}).map(([name, value]) => ({ name, value }))
+    };
+
+    const newIssues = analyzer.analyzeAndStore(entry);
+
+    if (newIssues.length > 0) {
+        broadcastToExtensionPages({
+            type: 'ANALYZER_ISSUES_FOUND',
+            payload: newIssues
+        });
+    }
+
+    // 2. Broadcast for repeater/interceptor listeners
     broadcastToExtensionPages({
         type: 'RESPONSE_RECEIVED',
         payload: { tabId, ...params }
@@ -258,3 +242,43 @@ function handleBridgeMessage(message) {
 }
 
 console.log('[Nariya] Service worker loaded');
+
+// ═══════════════════════════════════════════════════════════════════
+//  DNR Rule Feedback (Toasts)
+// ═══════════════════════════════════════════════════════════════════
+
+if (chrome.declarativeNetRequest.onRuleMatchedDebug) {
+    chrome.declarativeNetRequest.onRuleMatchedDebug.addListener((info) => {
+        if (!info.request.tabId || info.request.tabId === -1) return;
+
+        const ruleId = info.rule.ruleId;
+        if (ruleId >= 100000) {
+            const rule = activeRuleMap.get(ruleId);
+            if (rule) {
+                // 1. Add to execution logs
+                executionLogs.addLog({
+                    ruleType: rule.type,
+                    ruleName: rule.config?.name || 'Rule Applied',
+                    url: info.request.url || '',
+                    method: info.request.method || 'GET',
+                    tabId: info.request.tabId
+                });
+
+                // 2. Broadcast to UI
+                broadcastToExtensionPages({
+                    type: 'EXECUTION_LOG_ADDED'
+                });
+
+                // 3. Send Toast to Tab
+                chrome.tabs.sendMessage(info.request.tabId, {
+                    type: 'SHOW_NARIYA_TOAST',
+                    payload: {
+                        title: rule.config?.name || 'Rule Applied',
+                        message: `Matched ${rule.urlFilter || '*'}`,
+                        ruleType: rule.type
+                    }
+                }).catch(() => { });
+            }
+        }
+    });
+}

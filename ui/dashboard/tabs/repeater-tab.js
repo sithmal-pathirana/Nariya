@@ -2,6 +2,7 @@
 
 import { sendMessage } from '../../shared/messaging.js';
 import { escapeHtml } from '../../shared/utils.js';
+import { runInSandbox, appendToConsole, formatScriptLogs } from '../dashboard.js';
 
 // HTML IDs: repeaterMethod, repeaterUrl, repeaterHeaders, repeaterBody,
 //           sendRequestBtn, historyList, historySearch, clearHistoryBtn,
@@ -18,6 +19,8 @@ const responseHeadersContent = document.getElementById('responseHeadersContent')
 const repStatus = document.getElementById('responseStatus');
 const repDuration = document.getElementById('responseDuration');
 const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+const preRequestScriptInput = document.getElementById('preRequestScript');
+const postResponseScriptInput = document.getElementById('postResponseScript');
 
 // Response sub-tabs
 const respTabs = document.querySelectorAll('.resp-tab');
@@ -76,10 +79,55 @@ export function initRepeaterTab() {
             return;
         }
 
+        // --- PRE-REQUEST SCRIPT ---
+        const preScript = preRequestScriptInput ? preRequestScriptInput.value.trim() : '';
+        if (preScript) {
+            try {
+                const result = await runInSandbox(preScript, { request: entry });
+                if (result.ok && result.data) {
+                    const logs = formatScriptLogs(result.data.logs);
+                    if (logs) appendToConsole('[Repeater Pre-Request]\n' + logs);
+                    if (result.data.request) {
+                        Object.assign(entry, result.data.request);
+                    }
+                    if (result.data.error) {
+                        appendToConsole('❌ Pre-request error: ' + result.data.error);
+                    }
+                } else {
+                    appendToConsole('❌ Pre-request sandbox error: ' + (result.error || 'Unknown'));
+                }
+            } catch (e) {
+                appendToConsole('❌ Pre-request exception: ' + e.message);
+            }
+        }
+
         const res = await sendMessage('REPEATER_REPLAY', { entry });
 
         if (res.ok) {
-            const data = res.data;
+            let data = res.data;
+
+            // --- POST-RESPONSE SCRIPT ---
+            const postScript = postResponseScriptInput ? postResponseScriptInput.value.trim() : '';
+            if (postScript) {
+                try {
+                    const result = await runInSandbox(postScript, { response: data });
+                    if (result.ok && result.data) {
+                        const logs = formatScriptLogs(result.data.logs);
+                        if (logs) appendToConsole('[Repeater Post-Response]\n' + logs);
+                        if (result.data.response) {
+                            data = Object.assign(data, result.data.response);
+                        }
+                        if (result.data.error) {
+                            appendToConsole('❌ Post-response error: ' + result.data.error);
+                        }
+                    } else {
+                        appendToConsole('❌ Post-response sandbox error: ' + (result.error || 'Unknown'));
+                    }
+                } catch (e) {
+                    appendToConsole('❌ Post-response exception: ' + e.message);
+                }
+            }
+
             if (repStatus) {
                 repStatus.textContent = `${data.status} ${data.statusText || ''}`;
                 repStatus.className = `response-status status-${String(data.status).charAt(0)}xx`;

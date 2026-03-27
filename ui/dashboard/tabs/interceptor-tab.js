@@ -9,6 +9,9 @@ const toggleInterceptorBtn = document.getElementById('toggleInterceptorBtn');
 const interceptorStatus = document.getElementById('interceptorStatus');
 const pausedRequestsList = document.getElementById('pausedRequestsList');
 const requestEditor = document.getElementById('requestEditor');
+const autoMutateToggle = document.getElementById('autoMutateToggle');
+const autoMutateScript = document.getElementById('autoMutateScript');
+const saveAutoMutateBtn = document.getElementById('saveAutoMutateBtn');
 
 let interceptorAttached = false;
 let interceptorTabId = null;
@@ -111,6 +114,21 @@ export function initInterceptorTab() {
         }
     });
 
+    if (autoMutateToggle) {
+        autoMutateToggle.addEventListener('change', async () => {
+            await sendMessage('UPDATE_SETTINGS', { interceptorAutoMutate: autoMutateToggle.checked });
+        });
+    }
+
+    if (saveAutoMutateBtn) {
+        saveAutoMutateBtn.addEventListener('click', async () => {
+            const script = autoMutateScript.value.trim();
+            await sendMessage('UPDATE_SETTINGS', { interceptorAutoMutateScript: script });
+            saveAutoMutateBtn.textContent = 'Saved!';
+            setTimeout(() => saveAutoMutateBtn.textContent = 'Save Auto-Mutate', 2000);
+        });
+    }
+
     chrome.runtime.onMessage.addListener((message) => {
         if (message.type === 'REQUEST_PAUSED') {
             loadPausedRequests();
@@ -136,6 +154,12 @@ export async function refreshInterceptorUI() {
             }
         }
         if (currentVal) interceptorTabSelect.value = currentVal;
+    }
+
+    const setRes = await sendMessage('GET_SETTINGS');
+    if (setRes.ok && setRes.data) {
+        if (autoMutateToggle) autoMutateToggle.checked = setRes.data.interceptorAutoMutate;
+        if (autoMutateScript) autoMutateScript.value = setRes.data.interceptorAutoMutateScript || '';
     }
 
     const attachedRes = await sendMessage('DEBUGGER_GET_ATTACHED_TABS');

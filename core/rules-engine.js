@@ -11,6 +11,9 @@ const RULE_ID_BASE = 100000;
 const MAX_DYNAMIC_RULES = 5000;
 const MAX_SESSION_RULES = 5000;
 
+// Exported map of DNR Rule ID -> User Rule details
+export const activeRuleMap = new Map();
+
 /**
  * Convert a user-friendly URL pattern to a declarativeNetRequest urlFilter
  * @param {string} pattern
@@ -157,11 +160,8 @@ function compileRule(rule, ruleId) {
             };
         }
 
-        // Mock and delay rules are handled by the content script interceptor,
-        // not by declarativeNetRequest
         case 'mock':
         case 'delay':
-        case 'script':
             return null;
 
         default:
@@ -180,10 +180,13 @@ export function compileAllRules(userRules, settings = {}) {
     const dnrRules = [];
     let ruleId = RULE_ID_BASE;
 
+    activeRuleMap.clear();
+
     for (const rule of userRules) {
         const compiled = compileRule(rule, ruleId);
         if (compiled) {
             dnrRules.push(compiled);
+            activeRuleMap.set(ruleId, rule);
             ruleId++;
         }
     }
@@ -294,13 +297,4 @@ export function getInterceptorRules(userRules) {
     return userRules.filter(
         r => r.enabled && (r.type === 'mock' || r.type === 'delay')
     );
-}
-
-/**
- * Get script injection rules
- * @param {Array} userRules
- * @returns {Array}
- */
-export function getScriptRules(userRules) {
-    return userRules.filter(r => r.enabled && r.type === 'script');
 }

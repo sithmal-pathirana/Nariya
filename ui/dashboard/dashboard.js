@@ -5,6 +5,8 @@ import { initRulesTab, loadRules, getAllRules } from './tabs/rules-tab.js';
 import { initInterceptorTab, refreshInterceptorUI } from './tabs/interceptor-tab.js';
 import { initRepeaterTab, loadRepeaterHistory } from './tabs/repeater-tab.js';
 import { initComparerTab } from './tabs/comparer-tab.js';
+import { initAnalyzerTab, loadAnalyzerIssues } from './tabs/analyzer-tab.js';
+import { initLogsTab, loadExecutionLogs } from './tabs/logs-tab.js';
 
 // ─── DOM Elements ───
 const navButtons = document.querySelectorAll('.nav-item');
@@ -49,6 +51,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 target.classList.add('active');
                 if (btn.dataset.tab === 'interceptor') refreshInterceptorUI();
                 if (btn.dataset.tab === 'repeater') loadRepeaterHistory();
+                if (btn.dataset.tab === 'analyzer') loadAnalyzerIssues();
+                if (btn.dataset.tab === 'logs') loadExecutionLogs();
             }
         });
     });
@@ -58,6 +62,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     initInterceptorTab();
     initRepeaterTab();
     initComparerTab();
+    initAnalyzerTab();
+    initLogsTab();
 
     // 4. Setup Modals & Global State
     setupModals();
@@ -158,10 +164,6 @@ export function openRuleModal(rule = null) {
             case 'delay':
                 document.getElementById('delayMs').value = c.delayMs || 1000;
                 break;
-            case 'script':
-                document.getElementById('scriptJs').value = c.js || '';
-                document.getElementById('scriptCss').value = c.css || '';
-                break;
         }
     }
 
@@ -176,8 +178,7 @@ function updateConfigSection() {
         'redirect': 'configRedirect',
         'header': 'configHeader',
         'mock': 'configMock',
-        'delay': 'configDelay',
-        'script': 'configScript'
+        'delay': 'configDelay'
     };
     const section = document.getElementById(sectionMap[type]);
     if (section) section.style.display = 'block';
@@ -268,10 +269,6 @@ function setupModals() {
                     break;
                 case 'delay':
                     rule.config.delayMs = parseInt(document.getElementById('delayMs').value) || 1000;
-                    break;
-                case 'script':
-                    rule.config.js = document.getElementById('scriptJs').value;
-                    rule.config.css = document.getElementById('scriptCss').value;
                     break;
             }
 

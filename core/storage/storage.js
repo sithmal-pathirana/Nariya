@@ -16,7 +16,9 @@ const DEFAULT_SETTINGS = {
   interceptorAutoForward: false,
   maxRepeaterHistory: 500,
   theme: 'dark',
-  allowCorsBypass: true
+  allowCorsBypass: true,
+  interceptorAutoMutate: false,
+  interceptorAutoMutateScript: ''
 };
 
 /**

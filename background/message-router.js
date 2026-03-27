@@ -7,6 +7,11 @@ import * as rulesHandler from './handlers/rules-handler.js';
 import * as debuggerHandler from './handlers/debugger-handler.js';
 import * as repeaterHandler from './handlers/repeater-handler.js';
 import * as miscHandler from './handlers/misc-handler.js';
+import * as storage from '../core/storage/storage.js';
+import * as repeater from '../core/repeater.js';
+import * as analyzer from '../core/analyzer.js';
+import * as executionLogs from '../core/execution-logs.js';
+import * as debuggerProxy from '../core/debugger-proxy.js';
 
 /**
  * Handle UI messages (from popup / dashboard)
@@ -51,6 +56,28 @@ export async function handleUIMessage(message, sender, sendResponse, syncRulesFn
             case 'GET_ALL_TABS':
                 await miscHandler.handle(message, sendResponse, syncRulesFn);
                 break;
+
+            // --- Analyzer ---
+            case 'ANALYZER_GET_HISTORY': {
+                sendResponse({ ok: true, data: analyzer.getIssues() });
+                break;
+            }
+            case 'ANALYZER_CLEAR_HISTORY': {
+                analyzer.clearIssues();
+                sendResponse({ ok: true });
+                break;
+            }
+
+            // --- Execution Logs ---
+            case 'LOGS_GET': {
+                sendResponse({ ok: true, data: executionLogs.getLogs() });
+                break;
+            }
+            case 'LOGS_CLEAR': {
+                executionLogs.clearLogs();
+                sendResponse({ ok: true });
+                break;
+            }
 
             default:
                 sendResponse({ ok: false, error: `Unknown message type: ${message.type}` });
