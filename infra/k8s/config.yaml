@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nariya-backend-config
+  namespace: default
+data:
+  PORT: "8080"
+  CORS_ORIGIN: "*"
+  ORACLE_S3_REGION: "us-ashburn-1"
+  ORACLE_S3_BUCKET: "nariya_mocks"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: nariya-backend-secrets
+  namespace: default
+type: Opaque
+stringData:
+  # Replace with actual base64 encoded secrets or use a secret manager in production
+  MONGO_URI: "mongodb+srv://user:pass@cluster.mongodb.net/nariya?retryWrites=true&w=majority"
+  GOOGLE_CLIENT_ID: "client_id_placeholder"
+  GOOGLE_CLIENT_SECRET: "client_secret_placeholder"
+  ORACLE_S3_ENDPOINT: "https://your-namespace.compat.objectstorage.us-ashburn-1.oraclecloud.com"
+  ORACLE_S3_ACCESS_KEY: "access_key_placeholder"
+  ORACLE_S3_SECRET_KEY: "secret_key_placeholder"

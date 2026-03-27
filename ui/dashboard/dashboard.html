@@ -72,6 +72,41 @@
             </div>
 
             <div class="sidebar-footer">
+                <div class="sidebar-user-profile" id="userProfileSection"
+                    style="margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: var(--radius); display: flex; flex-direction: column; gap: 8px;">
+                    <div id="userProfileUnauth">
+                        <p style="font-size: 12px; color: var(--text-muted); margin: 0 0 8px 0; line-height: 1.4;">Sync
+                            rules & mocks to the cloud.</p>
+                        <button class="btn btn-primary" id="googleSignInBtn"
+                            style="width: 100%; display: flex; justify-content: center; gap: 8px;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M22 12A10 10 0 1 1 12 2a10 10 0 0 1 10 10z"></path>
+                                <path d="M12 8v8"></path>
+                                <path d="M8 12h8"></path>
+                            </svg>
+                            Sign In
+                        </button>
+                    </div>
+                    <div id="userProfileAuth" style="display: none; align-items: center; gap: 8px;">
+                        <img id="userProfileAvatar" src="" alt="Avatar"
+                            style="width: 24px; height: 24px; border-radius: 50%;">
+                        <div style="flex: 1; overflow: hidden;">
+                            <div id="userProfileName"
+                                style="font-size: 13px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                User</div>
+                        </div>
+                        <button class="btn-ghost" id="googleSignOutBtn" title="Sign Out" style="padding: 4px;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                                <polyline points="16 17 21 12 16 7"></polyline>
+                                <line x1="21" y1="12" x2="9" y2="12"></line>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
                 <div class="sidebar-toggle-row">
                     <label class="toggle-switch" title="Global Enable/Disable">
                         <input type="checkbox" id="globalToggle" checked>
@@ -550,10 +585,31 @@
                         <label>Status Code</label>
                         <input type="number" id="mockStatusCode" class="text-input" value="200" min="100" max="599">
                     </div>
-                    <div class="field-row">
-                        <label>Response Body (JSON)</label>
+
+                    <div class="field-row inline" style="margin-top: 12px; margin-bottom: 8px;">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="mockUseCloudToggle">
+                            <span class="slider"></span>
+                        </label>
+                        <span style="font-size: 13px; font-weight: 500;">Use Oracle Object Storage (For large
+                            assets)</span>
+                    </div>
+
+                    <div id="mockLocalEditor" class="field-row">
+                        <label>Response Body (Raw HTTP Editor)</label>
                         <textarea id="mockBody" class="code-input" rows="8"
                             placeholder='{"message": "Mocked response"}'></textarea>
+                    </div>
+
+                    <div id="mockCloudEditor" class="field-row"
+                        style="display:none; padding: 12px; background: var(--bg-secondary); border-radius: var(--radius);">
+                        <label>Upload Mock Asset</label>
+                        <div style="display: flex; gap: 8px; margin-top: 8px;">
+                            <input type="file" id="mockCloudFileInput" style="flex: 1;" class="text-input">
+                            <button class="btn btn-primary" id="mockCloudUploadBtn" type="button">Upload</button>
+                        </div>
+                        <input type="text" id="mockCloudKey" class="text-input"
+                            placeholder="Object Key (Auto-populated after upload)" style="margin-top: 8px;" readonly>
                     </div>
                 </div>
 

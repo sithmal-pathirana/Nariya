@@ -12,8 +12,16 @@
     "storage",
     "activeTab",
     "tabs",
-    "offscreen"
+    "offscreen",
+    "identity"
   ],
+  "oauth2": {
+    "client_id": "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/userinfo.profile"
+    ]
+  },
   "host_permissions": [
     "<all_urls>"
   ],

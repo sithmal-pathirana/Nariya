@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nariya-backend
+  labels:
+    app: nariya-backend
+spec:
+  # 2 Replicas to utilize multi-core on Oracle Cloud efficiently while keeping memory below 12GB limit
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nariya-backend
+  template:
+    metadata:
+      labels:
+        app: nariya-backend
+    spec:
+      containers:
+      - name: nariya-backend
+        image: your-docker-repo/nariya-backend:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        envFrom:
+        - configMapRef:
+            name: nariya-backend-config
+        - secretRef:
+            name: nariya-backend-secrets
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10

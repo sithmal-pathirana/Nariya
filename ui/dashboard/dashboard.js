@@ -7,6 +7,7 @@ import { initRepeaterTab, loadRepeaterHistory } from './tabs/repeater-tab.js';
 import { initComparerTab } from './tabs/comparer-tab.js';
 import { initAnalyzerTab, loadAnalyzerIssues } from './tabs/analyzer-tab.js';
 import { initLogsTab, loadExecutionLogs } from './tabs/logs-tab.js';
+import { initAuth } from './components/auth.js';
 
 // ─── DOM Elements ───
 const navButtons = document.querySelectorAll('.nav-item');
@@ -65,7 +66,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     initAnalyzerTab();
     initLogsTab();
 
-    // 4. Setup Modals & Global State
+    // 4. Initialize Auth Integration
+    initAuth();
+
+    // 5. Setup Modals & Global State
     setupModals();
     await loadSettings();
     await loadRules();
@@ -159,7 +163,17 @@ export function openRuleModal(rule = null) {
                 break;
             case 'mock':
                 document.getElementById('mockStatusCode').value = c.statusCode || 200;
-                document.getElementById('mockBody').value = c.body || '';
+                if (c.cloudKey) {
+                    document.getElementById('mockUseCloudToggle').checked = true;
+                    document.getElementById('mockCloudKey').value = c.cloudKey;
+                    document.getElementById('mockLocalEditor').style.display = 'none';
+                    document.getElementById('mockCloudEditor').style.display = 'block';
+                } else {
+                    document.getElementById('mockUseCloudToggle').checked = false;
+                    document.getElementById('mockBody').value = c.body || '';
+                    document.getElementById('mockLocalEditor').style.display = 'block';
+                    document.getElementById('mockCloudEditor').style.display = 'none';
+                }
                 break;
             case 'delay':
                 document.getElementById('delayMs').value = c.delayMs || 1000;
@@ -265,7 +279,14 @@ function setupModals() {
                     break;
                 case 'mock':
                     rule.config.statusCode = parseInt(document.getElementById('mockStatusCode').value) || 200;
-                    rule.config.body = document.getElementById('mockBody').value;
+                    if (document.getElementById('mockUseCloudToggle').checked) {
+                        rule.config.cloudKey = document.getElementById('mockCloudKey').value.trim();
+                        if (!rule.config.cloudKey) throw new Error('Cloud Object Key is required when mapping to Oracle Object DB.');
+                        rule.config.body = ''; // Clear local body to save space
+                    } else {
+                        rule.config.body = document.getElementById('mockBody').value;
+                        delete rule.config.cloudKey;
+                    }
                     break;
                 case 'delay':
                     rule.config.delayMs = parseInt(document.getElementById('delayMs').value) || 1000;
@@ -279,4 +300,58 @@ function setupModals() {
             alert('Error saving rule: ' + e.message);
         }
     });
+
+    // Cloud Mock Storage logic
+    const mockUseCloudToggle = document.getElementById('mockUseCloudToggle');
+    if (mockUseCloudToggle) {
+        mockUseCloudToggle.addEventListener('change', () => {
+            if (mockUseCloudToggle.checked) {
+                document.getElementById('mockLocalEditor').style.display = 'none';
+                document.getElementById('mockCloudEditor').style.display = 'block';
+            } else {
+                document.getElementById('mockLocalEditor').style.display = 'block';
+                document.getElementById('mockCloudEditor').style.display = 'none';
+            }
+        });
+    }
+
+    const mockCloudUploadBtn = document.getElementById('mockCloudUploadBtn');
+    if (mockCloudUploadBtn) {
+        mockCloudUploadBtn.addEventListener('click', async () => {
+            const fileInput = document.getElementById('mockCloudFileInput');
+            if (!fileInput.files.length) {
+                return alert('Please select a file to upload to the Cloud.');
+            }
+
+            const { sessionToken } = await chrome.storage.local.get('sessionToken');
+            if (!sessionToken) {
+                return alert('You must be signed in to upload assets to Oracle Object DB.');
+            }
+
+            const formData = new FormData();
+            formData.append('mockFile', fileInput.files[0]);
+
+            try {
+                mockCloudUploadBtn.textContent = 'Uploading...';
+                mockCloudUploadBtn.disabled = true;
+
+                const res = await fetch('http://localhost:8080/api/mocks/upload', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${sessionToken}` },
+                    body: formData
+                });
+
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error);
+
+                document.getElementById('mockCloudKey').value = data.key;
+                alert('Successfully uploaded mock asset to Oracle Object DB!');
+            } catch (err) {
+                alert('Upload failed: ' + err.message);
+            } finally {
+                mockCloudUploadBtn.textContent = 'Upload';
+                mockCloudUploadBtn.disabled = false;
+            }
+        });
+    }
 }
