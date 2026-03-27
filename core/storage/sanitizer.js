@@ -14,6 +14,7 @@ export function sanitizeRule(rule) {
         type: typeof rule.type === 'string' && RULE_TYPES.includes(rule.type) ? rule.type : 'redirect',
         urlFilter: typeof rule.urlFilter === 'string' ? rule.urlFilter.substring(0, 1000) : '*',
         enabled: typeof rule.enabled === 'boolean' ? rule.enabled : true,
+        group: typeof rule.group === 'string' ? rule.group.substring(0, 50) : 'Default',
         createdAt: typeof rule.createdAt === 'number' ? rule.createdAt : Date.now(),
         updatedAt: Date.now()
     };

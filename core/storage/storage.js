@@ -18,7 +18,8 @@ const DEFAULT_SETTINGS = {
   theme: 'dark',
   allowCorsBypass: true,
   interceptorAutoMutate: false,
-  interceptorAutoMutateScript: ''
+  interceptorAutoMutateScript: '',
+  enableCloudSync: false
 };
 
 /**
@@ -195,8 +196,11 @@ export async function updateSettings(updates) {
  */
 async function syncToCloud(rules) {
   try {
+    const settings = await getSettings();
+    if (!settings.enableCloudSync) return; // User opted to stay Local-Only
+
     const { sessionToken } = await chrome.storage.local.get('sessionToken');
-    if (!sessionToken) return; // User is working entirely offline
+    if (!sessionToken) return; // Unauthenticated
 
     // Use environment config in production
     const BACKEND_URL = 'http://localhost:8080';

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nariya DevTools Panel</title>
+    <link rel="stylesheet" href="panel.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <div class="panel-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <img src="../icons/icon48.png" alt="Logo" class="logo">
+                <h1>Nariya DevTools</h1>
+            </div>
+            <div class="header-right">
+                <label class="toggle-switch">
+                    <input type="checkbox" id="globalEnableToggle" checked>
+                    <span class="slider"></span>
+                </label>
+                <span>Global Enabled</span>
+                <button id="openDashboardBtn" class="btn btn-primary">Open Dashboard</button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Active Rules Section -->
+            <section class="card">
+                <div class="card-header">
+                    <h2>Active Rules on this Tab</h2>
+                    <span class="badge badge-info" id="activeRulesCount">0</span>
+                </div>
+                <div class="card-body">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Name / Filter</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="activeRulesBody">
+                            <tr>
+                                <td colspan="3" class="empty-state">No rules are modifying traffic on this tab.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Interceptor Quick Control Section -->
+            <section class="card">
+                <div class="card-header">
+                    <h2>Quick Intercept</h2>
+                </div>
+                <div class="card-body intercept-card">
+                    <p>Attach the interceptor proxy to this specific tab to pause and manually tamper with requests
+                        before they leave the browser.</p>
+                    <div style="display: flex; gap: 12px; margin-top: 12px;">
+                        <button id="attachTabBtn" class="btn btn-danger">Attach to Current Tab</button>
+                        <button id="detachTabBtn" class="btn btn-ghost" style="display:none;">Detach
+                            Interceptor</button>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- We use the same messaging core -->
+    <script type="module" src="panel.js"></script>
+</body>
+
+</html>

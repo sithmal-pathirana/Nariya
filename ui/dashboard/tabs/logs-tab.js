@@ -5,6 +5,9 @@ import { escapeHtml } from '../../shared/utils.js';
 
 const executionLogsList = document.getElementById('executionLogsList');
 const clearLogsBtn = document.getElementById('clearLogsBtn');
+const exportHarBtn = document.getElementById('exportHarBtn');
+
+let currentLogsState = [];
 
 export function initLogsTab() {
     if (!executionLogsList) return;
@@ -24,6 +27,63 @@ export function initLogsTab() {
             }
         });
     }
+
+    if (exportHarBtn) {
+        exportHarBtn.addEventListener('click', () => {
+            if (currentLogsState.length === 0) {
+                alert('No logs to export.');
+                return;
+            }
+            exportToHar(currentLogsState);
+        });
+    }
+}
+
+function exportToHar(logs) {
+    const harLog = {
+        log: {
+            version: "1.2",
+            creator: { name: "Nariya Proxy", version: "0.1.0" },
+            pages: [],
+            entries: logs.map(log => ({
+                startedDateTime: new Date(log.timestamp).toISOString(),
+                time: 0, // Mocked
+                request: {
+                    method: log.method || "GET",
+                    url: log.url,
+                    httpVersion: "HTTP/1.1",
+                    cookies: [],
+                    headers: [],
+                    queryString: [],
+                    postData: { mimeType: "", text: "" },
+                    headersSize: -1,
+                    bodySize: -1
+                },
+                response: {
+                    status: 200, // Mocked unless known
+                    statusText: "OK",
+                    httpVersion: "HTTP/1.1",
+                    cookies: [],
+                    headers: [],
+                    content: { size: 0, mimeType: "x-unknown" },
+                    redirectURL: "",
+                    headersSize: -1,
+                    bodySize: -1
+                },
+                cache: {},
+                timings: { send: 0, wait: 0, receive: 0 },
+                comment: `Nariya Rule Applied: [${log.ruleType}] ${log.ruleName}`
+            }))
+        }
+    };
+
+    const blob = new Blob([JSON.stringify(harLog, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `nariya-execution-logs-${Date.now()}.har`;
+    a.click();
+    URL.revokeObjectURL(url);
 }
 
 export async function loadExecutionLogs() {
@@ -33,6 +93,7 @@ export async function loadExecutionLogs() {
     if (!res.ok) return;
 
     const logs = res.data || [];
+    currentLogsState = logs;
 
     if (logs.length === 0) {
         executionLogsList.innerHTML = '<div class="empty-state">No rules have been executed yet. Keep the extension active and browse.</div>';

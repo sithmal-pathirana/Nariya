@@ -47,16 +47,23 @@
         // Exact match
         if (url === filter) return true;
 
+        // Strip query params and hash from both for comparison
+        const urlBase = url.split('?')[0].split('#')[0];
+        const filterBase = filter.split('?')[0].split('#')[0];
+
+        // Check base URL exact match
+        if (urlBase === filterBase) return true;
+
         // Wildcard match
         if (filter.includes('*')) {
             const regex = new RegExp(
                 '^' + filter.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$'
             );
-            return regex.test(url);
+            return regex.test(url) || regex.test(urlBase);
         }
 
-        // Substring match
-        return url.includes(filter);
+        // Substring match — check both full URL and base URL
+        return url.includes(filter) || urlBase.includes(filterBase);
     }
 
     /**

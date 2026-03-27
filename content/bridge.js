@@ -7,6 +7,17 @@
 (function () {
     'use strict';
 
+    // Fetch initial rules from service worker
+    chrome.runtime.sendMessage({ from: 'bridge', type: 'GET_INTERCEPTOR_RULES' }, (response) => {
+        if (response && response.rules) {
+            window.postMessage({
+                source: 'nariya-bridge',
+                type: 'UPDATE_INTERCEPTOR_RULES',
+                payload: { rules: response.rules }
+            }, '*');
+        }
+    });
+
     // ─── Page → Service Worker ──────────────────────────────────────
     window.addEventListener('message', (event) => {
         if (event.source !== window) return;

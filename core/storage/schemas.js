@@ -17,5 +17,6 @@ export const SETTINGS_SCHEMA = {
     interceptorAutoForward: 'boolean',
     maxRepeaterHistory: 'number',
     theme: 'string',
-    allowCorsBypass: 'boolean' // Add as opt-in
+    allowCorsBypass: 'boolean',
+    enableCloudSync: 'boolean'
 };

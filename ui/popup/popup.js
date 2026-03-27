@@ -9,6 +9,7 @@ import { escapeHtml } from '../shared/utils.js';
 // ─── DOM References ──────────────────────────────────────────────
 
 const globalToggle = document.getElementById('globalToggle');
+const corsToggle = document.getElementById('corsToggle');
 const activeCount = document.getElementById('activeCount');
 const totalCount = document.getElementById('totalCount');
 const interceptedCount = document.getElementById('interceptedCount');
@@ -29,12 +30,19 @@ async function loadSettings() {
     const res = await sendMessage('GET_SETTINGS');
     if (res.ok) {
         globalToggle.checked = res.data.globalEnabled;
+        if (corsToggle) corsToggle.checked = res.data.allowCorsBypass;
     }
 }
 
 globalToggle.addEventListener('change', async () => {
-    await sendMessage('UPDATE_SETTINGS', { globalEnabled: globalToggle.checked });
+    await sendMessage('UPDATE_SETTINGS', { updates: { globalEnabled: globalToggle.checked } });
 });
+
+if (corsToggle) {
+    corsToggle.addEventListener('change', async () => {
+        await sendMessage('UPDATE_SETTINGS', { updates: { allowCorsBypass: corsToggle.checked } });
+    });
+}
 
 // ─── Rules ───────────────────────────────────────────────────────
 

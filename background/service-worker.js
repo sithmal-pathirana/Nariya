@@ -19,7 +19,40 @@ import { runInSandbox } from './offscreen-manager.js';
 
 chrome.runtime.onInstalled.addListener(async (details) => {
     console.log(`[Nariya] Installed (${details.reason})`);
+
+    // Create Context Menu
+    chrome.contextMenus.create({
+        id: "send-to-nariya",
+        title: "Send to Nariya Repeater",
+        contexts: ["link", "selection", "page"]
+    });
+
     await syncRules();
+});
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+    if (info.menuItemId === "send-to-nariya") {
+        const targetUrl = info.linkUrl || info.selectionText || info.pageUrl;
+
+        // Log to repeater history
+        const entry = {
+            url: targetUrl || '',
+            method: 'GET',
+            headers: [],
+            body: null,
+            source: 'context-menu',
+            timestamp: Date.now()
+        };
+        repeater.addToHistory(entry);
+
+        // Notify UI to refresh repeater history if open
+        broadcastToExtensionPages({
+            type: 'HISTORY_UPDATED'
+        });
+
+        // Open options page if they aren't looking at it
+        chrome.runtime.openOptionsPage();
+    }
 });
 
 chrome.runtime.onStartup.addListener(async () => {
@@ -58,6 +91,17 @@ async function syncRules() {
 
     // 2. Push interceptor rules (mock, delay) to content scripts
     const interceptorRules = getInterceptorRules(allRules);
+    if (interceptorRules.length > 0) {
+        // Inject the interceptor into all open tabs first
+        const tabs = await chrome.tabs.query({});
+        for (const tab of tabs) {
+            if (tab.id && tab.url && !tab.url.startsWith('chrome://') && !tab.url.startsWith('chrome-extension://')) {
+                await injectInterceptor(tab.id);
+            }
+        }
+        // Brief delay to ensure injection completes before sending rules
+        await new Promise(r => setTimeout(r, 150));
+    }
     await broadcastToAllTabs({
         target: 'bridge',
         type: 'UPDATE_INTERCEPTOR_RULES',
@@ -82,19 +126,11 @@ async function broadcastToAllTabs(message) {
 }
 
 /**
- * Inject the interceptor script into a specific tab
+ * Inject the interceptor script into a specific tab (Fallback/legacy)
  */
 async function injectInterceptor(tabId) {
-    try {
-        await chrome.scripting.executeScript({
-            target: { tabId },
-            files: ['content/interceptor.js'],
-            world: 'MAIN',
-            injectImmediately: true
-        });
-    } catch (e) {
-        console.warn(`[Nariya] Failed to inject interceptor into tab ${tabId}:`, e);
-    }
+    // Interceptor is now injected via manifest.json at document_start.
+    // This is kept as a no-op fallback in case of dynamic needs.
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -216,8 +252,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     // Handle bridge messages (from content script)
     if (message.from === 'bridge') {
-        handleBridgeMessage(message);
-        return;
+        handleBridgeMessage(message, sender, sendResponse);
+        return true; // Keep channel open
     }
 
     // Handle UI messages via the router
@@ -225,18 +261,38 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Keep channel open for async responses
 });
 
-function handleBridgeMessage(message) {
+function handleBridgeMessage(message, sender, sendResponse) {
     switch (message.type) {
+        case 'GET_INTERCEPTOR_RULES':
+            getAllRules().then(allRules => {
+                sendResponse({ rules: getInterceptorRules(allRules) });
+            }).catch(() => sendResponse({ rules: [] }));
+            break;
+
         case 'REQUEST_INTERCEPTED':
-            // Log intercepted request
             if (message.payload) {
-                repeater.addToHistory({
-                    url: message.payload.url,
-                    method: message.payload.method,
-                    source: `interceptor-${message.payload.type}`,
-                    timestamp: Date.now()
-                });
+                // Determine message based on type
+                const mType = message.payload.type;
+                let title = mType === 'mock' ? 'Mock Applied' : 'Delay Applied';
+                let msg = `Path: ${new URL(message.payload.url).pathname}`;
+
+                if (mType === 'mock') {
+                    msg += `\nStatus: ${message.payload.mockedResponse.status}`;
+                } else if (mType === 'delay') {
+                    msg += `\nDelay: ${message.payload.delayMs}ms`;
+                }
+
+                // Show UI Toast back in the same tab
+                if (sender.tab && sender.tab.id) {
+                    chrome.tabs.sendMessage(sender.tab.id, {
+                        type: 'SHOW_NARIYA_TOAST',
+                        payload: { title, message: msg, ruleType: mType }
+                    }).catch(() => { });
+                }
+
+                // Future implementation: Send to devtools/repeater history if needed
             }
+            sendResponse({ ok: true });
             break;
     }
 }

@@ -69,69 +69,177 @@
                     </svg>
                     <span>Logs</span>
                 </button>
-            </div>
-
-            <div class="sidebar-footer">
-                <div class="sidebar-user-profile" id="userProfileSection"
-                    style="margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: var(--radius); display: flex; flex-direction: column; gap: 8px;">
-                    <div id="userProfileUnauth">
-                        <p style="font-size: 12px; color: var(--text-muted); margin: 0 0 8px 0; line-height: 1.4;">Sync
-                            rules & mocks to the cloud.</p>
-                        <button class="btn btn-primary" id="googleSignInBtn"
-                            style="width: 100%; display: flex; justify-content: center; gap: 8px;">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2">
-                                <path d="M22 12A10 10 0 1 1 12 2a10 10 0 0 1 10 10z"></path>
-                                <path d="M12 8v8"></path>
-                                <path d="M8 12h8"></path>
-                            </svg>
-                            Sign In
-                        </button>
-                    </div>
-                    <div id="userProfileAuth" style="display: none; align-items: center; gap: 8px;">
-                        <img id="userProfileAvatar" src="" alt="Avatar"
-                            style="width: 24px; height: 24px; border-radius: 50%;">
-                        <div style="flex: 1; overflow: hidden;">
-                            <div id="userProfileName"
-                                style="font-size: 13px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                                User</div>
-                        </div>
-                        <button class="btn-ghost" id="googleSignOutBtn" title="Sign Out" style="padding: 4px;">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2">
-                                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-                                <polyline points="16 17 21 12 16 7"></polyline>
-                                <line x1="21" y1="12" x2="9" y2="12"></line>
-                            </svg>
-                        </button>
-                    </div>
-                </div>
-
-                <div class="sidebar-toggle-row">
-                    <label class="toggle-switch" title="Global Enable/Disable">
-                        <input type="checkbox" id="globalToggle" checked>
-                        <span class="slider"></span>
-                    </label>
-                    <span class="sidebar-footer-label">Enabled</span>
-                </div>
-                <div class="sidebar-toggle-row">
-                    <label class="toggle-switch" title="CORS Bypass">
-                        <input type="checkbox" id="corsToggle" checked>
-                        <span class="slider"></span>
-                    </label>
-                    <span class="sidebar-footer-label">CORS Bypass</span>
-                </div>
+                <button class="nav-item" data-tab="settings">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path
+                            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1h.09a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z">
+                        </path>
+                    </svg>
+                    <span>Settings</span>
+                </button>
             </div>
         </nav>
 
+
+
         <!-- ═══ Main Content ═══ -->
         <main class="main-content">
+
+            <!-- ─── Settings Tab ─── -->
+            <section class="tab-panel" id="tab-settings">
+                <div class="panel-header">
+                    <h1>Configuration & Storage Profile</h1>
+                    <div class="panel-actions">
+                        <label class="toggle-switch" title="Global Enable/Disable">
+                            <input type="checkbox" id="globalToggle" checked>
+                            <span class="slider"></span>
+                        </label>
+                        <span style="font-weight: 600;">Global Override</span>
+                    </div>
+                </div>
+
+                <div class="settings-layout"
+                    style="display: flex; flex-direction: column; gap: 24px; max-width: 800px; padding: 16px;">
+
+                    <!-- Network Behaviors -->
+                    <div class="settings-card"
+                        style="background: var(--bg-secondary); padding: 20px; border-radius: var(--radius); border: 1px solid var(--border);">
+                        <h2
+                            style="font-size: 16px; margin-bottom: 16px; color: var(--text-primary); border-bottom: 1px solid var(--border); padding-bottom: 8px;">
+                            Network Controls</h2>
+
+                        <div
+                            style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                            <div>
+                                <strong>CORS Bypass</strong>
+                                <p style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Automatically
+                                    intercepts Preflight requests and injects
+                                    <code>Access-Control-Allow-Origin: *</code>.
+                                </p>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="corsToggle" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Storage Configuration -->
+                    <div class="settings-card"
+                        style="background: var(--bg-secondary); padding: 20px; border-radius: var(--radius); border: 1px solid var(--border);">
+                        <div
+                            style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 16px;">
+                            <h2 style="font-size: 16px; margin: 0; color: var(--text-primary);">Storage Provider</h2>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <strong style="font-size: 14px; color: var(--text-primary);">Nariya Cloud Sync</strong>
+                                <label class="toggle-switch" title="Cloud Sync Mode">
+                                    <input type="checkbox" id="cloudSyncToggle">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Cloud Mode Block -->
+                        <div id="cloudStorageBlock" style="display: none;">
+                            <div
+                                style="background: rgba(16, 185, 129, 0.1); border: 1px dashed #10b981; border-radius: 6px; padding: 16px; display: flex; align-items: center; gap: 16px;">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10b981"
+                                    stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="17 8 12 3 7 8"></polyline>
+                                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                                </svg>
+                                <div style="flex: 1;">
+                                    <strong style="display: block; color: var(--text-primary);">Cloud Sync is
+                                        Active</strong>
+                                    <span style="font-size: 13px; color: var(--text-muted);">Your rules are
+                                        automatically mirrored to the Nariya backend. Rule Sharing is fully
+                                        enabled.</span>
+                                </div>
+                                <div id="userProfileSection" style="display: flex; align-items: center;">
+                                    <div id="userProfileUnauth">
+                                        <button class="btn btn-primary" id="googleSignInBtn"
+                                            style="display: flex; align-items: center; gap: 8px;">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                                stroke="currentColor" stroke-width="2">
+                                                <path d="M22 12A10 10 0 1 1 12 2a10 10 0 0 1 10 10z"></path>
+                                                <path d="M12 8v8"></path>
+                                                <path d="M8 12h8"></path>
+                                            </svg>
+                                            Sign In with Google
+                                        </button>
+                                    </div>
+                                    <div id="userProfileAuth" style="display: none; align-items: center; gap: 12px;">
+                                        <img id="userProfileAvatar" src="" alt="Avatar"
+                                            style="width: 28px; height: 28px; border-radius: 50%;">
+                                        <span id="userProfileName"
+                                            style="font-size: 14px; font-weight: 600; color: var(--text-primary);">User</span>
+                                        <button class="btn btn-ghost" id="googleSignOutBtn" title="Sign Out">Sign
+                                            Out</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Local Mode Block -->
+                        <div id="localStorageBlock" style="margin-top: 16px;">
+                            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">Cloud Sync is
+                                disabled. Choose where Nariya stores your rules locally.</p>
+
+                            <div class="radio-group" style="display: flex; flex-direction: column; gap: 12px;">
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <input type="radio" name="storageEngine" value="browser" checked>
+                                    <div>
+                                        <strong style="color: var(--text-primary);">Browser Extension Storage</strong>
+                                        <span style="display: block; font-size: 12px; color: var(--text-muted);">Saved
+                                            securely within Chrome's internal database (Default).</span>
+                                    </div>
+                                </label>
+
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <input type="radio" name="storageEngine" value="native">
+                                    <div style="flex: 1;">
+                                        <strong style="color: var(--text-primary);">Native File System</strong>
+                                        <span style="display: block; font-size: 12px; color: var(--text-muted);">Select
+                                            a folder on your hard drive to sync a flat `nariya_rules.json` file. Useful
+                                            for version control!</span>
+                                    </div>
+                                    <button class="btn btn-ghost" id="selectNativeDirBtn" style="display: none;">Select
+                                        Directory</button>
+                                </label>
+
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <input type="radio" name="storageEngine" value="gdrive">
+                                    <div style="flex: 1;">
+                                        <strong style="color: var(--text-primary);">Google Drive Direct Link</strong>
+                                        <span style="display: block; font-size: 12px; color: var(--text-muted);">Sync
+                                            the configuration file to your personal Google Drive without touching the
+                                            Nariya Cloud.</span>
+                                    </div>
+                                    <button class="btn btn-primary" id="gdriveAuthBtn" style="display: none;">Connect
+                                        Drive</button>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
 
             <!-- ─── Rules Tab ─── -->
             <section class="tab-panel active" id="tab-rules">
                 <div class="panel-header">
                     <h1>Request Rules</h1>
                     <div class="panel-actions">
+                        <button class="btn btn-ghost" id="openTemplatesBtn">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                <line x1="3" y1="9" x2="21" y2="9"></line>
+                                <line x1="9" y1="21" x2="9" y2="9"></line>
+                            </svg>
+                            Templates
+                        </button>
                         <button class="btn btn-ghost" id="importRulesBtn">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2">
@@ -139,7 +247,15 @@
                                 <polyline points="7 10 12 15 17 10" />
                                 <line x1="12" y1="15" x2="12" y2="3" />
                             </svg>
-                            Import
+                            Import File
+                        </button>
+                        <button class="btn btn-ghost" id="importShareBtn">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                            </svg>
+                            Import Link
                         </button>
                         <button class="btn btn-ghost" id="exportRulesBtn">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -272,8 +388,13 @@
                                 </select>
                             </div>
                             <div class="field-row">
-                                <label>URL</label>
-                                <input type="text" id="editUrl" class="text-input" placeholder="https://...">
+                                <label>Name</label>
+                                <input type="text" id="ruleName" class="text-input" placeholder="My awesome rule">
+                            </div>
+                            <div class="field-row">
+                                <label>Group</label>
+                                <input type="text" id="ruleGroup" class="text-input"
+                                    placeholder="e.g. Development, Production" value="Default">
                             </div>
                             <div class="field-row">
                                 <label>Headers</label>
@@ -493,11 +614,19 @@
                 </div>
             </section>
 
-            <!-- ─── Logs Tab ─── -->
             <section class="tab-panel" id="tab-logs">
                 <div class="panel-header">
                     <h1>Execution Logs</h1>
                     <div class="panel-actions">
+                        <button class="btn btn-ghost" id="exportHarBtn">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                                <polyline points="7 10 12 15 17 10" />
+                                <line x1="12" y1="15" x2="12" y2="3" />
+                            </svg>
+                            Export HAR
+                        </button>
                         <button class="btn btn-ghost" id="clearLogsBtn">Clear Logs</button>
                     </div>
                 </div>
@@ -525,6 +654,10 @@
                 <div class="field-row">
                     <label>Rule Name</label>
                     <input type="text" id="ruleName" class="text-input" placeholder="My Rule">
+                </div>
+                <div class="field-row">
+                    <label>Group / Folder</label>
+                    <input type="text" id="ruleGroup" class="text-input" placeholder="e.g. Development" value="Default">
                 </div>
                 <div class="field-row">
                     <label>Rule Type</label>
