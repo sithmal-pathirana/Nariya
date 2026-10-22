@@ -58,14 +58,16 @@ function compileRule(rule, ruleId) {
     if (!rule.enabled) return null;
 
     const condition = {
-        urlFilter: toUrlFilter(rule.urlFilter || '*'),
-        resourceTypes: rule.config?.resourceTypes || [
-            'main_frame', 'sub_frame', 'stylesheet', 'script',
-            'image', 'font', 'object', 'xmlhttprequest', 'ping',
-            'csp_report', 'media', 'websocket', 'webtransport',
-            'webbundle', 'other'
-        ]
+        urlFilter: toUrlFilter(rule.urlFilter || '*')
     };
+
+    // Only restrict resource types when the user has explicitly selected
+    // a subset via the UI checkboxes. Otherwise omit to match everything.
+    if (rule.config?.resourceTypes) {
+        if (rule.config.resourceTypes.length < 10) {
+            condition.resourceTypes = rule.config.resourceTypes;
+        }
+    }
 
     switch (rule.type) {
         case 'redirect': {
@@ -204,8 +206,19 @@ export function compileAllRules(userRules, settings = {}) {
                 ]
             },
             condition: {
-                urlFilter: '*', // Apply to all URLs
-                resourceTypes: ['xmlhttprequest', 'other'] // Target fetch/XHR API calls
+                urlFilter: '*',
+                resourceTypes: ['xmlhttprequest', 'other'],
+                // Protect Google Workspace domains that use credentialed requests.
+                // ACAO:* is invalid when credentials:'include' is used — the browser
+                // requires the exact origin, not a wildcard. Excluding these domains
+                // prevents Nariya from breaking Google Chat, Gmail, Docs, etc.
+                // This does NOT affect localhost or any other dev/staging server.
+                excludedRequestDomains: [
+                    'google.com', 'googleapis.com', 'gstatic.com',
+                    'googleusercontent.com', 'youtube.com', 'googlevideo.com',
+                    'google-analytics.com', 'googletagmanager.com',
+                    'doubleclick.net', 'firebaseio.com', 'firebaseapp.com'
+                ]
             }
         });
     }

@@ -1,6 +1,7 @@
 // dashboard.js - Main entry point for Nariya Dashboard
 
 import { sendMessage } from '../shared/messaging.js';
+import { showToast, escapeHtml } from '../shared/utils.js';
 import { initRulesTab, loadRules, getAllRules } from './tabs/rules-tab.js';
 import { initInterceptorTab, refreshInterceptorUI } from './tabs/interceptor-tab.js';
 import { initRepeaterTab, loadRepeaterHistory } from './tabs/repeater-tab.js';
@@ -23,6 +24,7 @@ let sandboxReady = false;
 
 // Request handling state
 let currentEditingRuleId = null;
+let isDirty = false;
 
 // ─── Initialization ───
 document.addEventListener('DOMContentLoaded', async () => {
@@ -79,6 +81,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (settingsRes.ok && settingsRes.data) {
         applySettingsUIState(settingsRes.data);
     }
+
+    // 7. Listen for record response from interceptor
+    chrome.runtime.onMessage.addListener((msg) => {
+        if (msg.type === 'RECORD_RESPONSE' && msg.data) {
+            openRuleModal({
+                type: 'mock',
+                urlFilter: msg.data.url,
+                group: 'Recorded Mocks',
+                config: {
+                    name: `Recorded: ${msg.data.url}`,
+                    statusCode: msg.data.status,
+                    headers: msg.data.headers || {},
+                    body: msg.data.body || '',
+                    delayMs: 0
+                }
+            });
+        }
+    });
 });
 
 // ─── Global State & Settings ───
@@ -155,7 +175,7 @@ storageRadios.forEach(radio => {
 document.getElementById('selectNativeDirBtn')?.addEventListener('click', async () => {
     try {
         const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
-        alert('Directory acquired! Nariya will attempt to sync `nariya_rules.json` here.');
+        showToast('Directory acquired! Nariya will attempt to sync `nariya_rules.json` here.', 'success');
     } catch (err) {
         console.error('User aborted directory picker.');
     }
@@ -203,10 +223,10 @@ document.getElementById('gdriveAuthBtn')?.addEventListener('click', async () => 
         await sendMessage('UPDATE_SETTINGS', { storageEngine: 'gdrive', gdriveFileId: fileId });
         btn.textContent = '✓ Connected';
         btn.style.background = '#10b981';
-        alert(`Google Drive connected! File ID: ${fileId}\nNariya will sync rules to nariya_rules.json in your Drive.`);
+        showToast(`Google Drive connected! File ID: ${fileId}\nNariya will sync rules to nariya_rules.json in your Drive.`, 'success');
     } catch (err) {
         console.error('Google Drive auth failed:', err);
-        alert('Failed to connect Google Drive: ' + (err.message || err));
+        showToast('Failed to connect Google Drive: ' + (err.message || err), 'error');
         btn.textContent = 'Connect Drive';
         btn.disabled = false;
     }
@@ -249,16 +269,56 @@ export function appendToConsole(text) {
     scriptConsoleOutput.textContent += text + '\n';
 }
 
+function createMockHeaderRow(name = '', value = '') {
+    const row = document.createElement('div');
+    row.className = 'header-mod-row';
+    row.style.display = 'flex';
+    row.style.gap = '8px';
+    row.style.alignItems = 'center';
+    
+    row.innerHTML = `
+        <input type="text" class="text-input header-name" placeholder="Header Name (e.g. Content-Type)" style="flex:1" value="${escapeHtml(name)}">
+        <input type="text" class="text-input header-value" placeholder="Value" style="flex:2" value="${escapeHtml(value)}">
+        <button type="button" class="btn btn-ghost delete-header-btn" title="Remove" style="padding: 6px; color: var(--accent-red);">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+        </button>
+    `;
+    
+    row.querySelector('.delete-header-btn').addEventListener('click', () => row.remove());
+    document.getElementById('mockHeadersContainer').appendChild(row);
+}
+
 // ─── Modal Handling ───
 export function openRuleModal(rule = null) {
     currentEditingRuleId = rule ? rule.id : null;
-    document.getElementById('modalTitle').textContent = rule ? 'Edit Rule' : 'Add Rule';
+    const isEdit = rule && rule.id;
+    const isDuplicate = rule && !rule.id;
+    document.getElementById('modalTitle').textContent = isEdit ? 'Edit Rule' : isDuplicate ? 'Duplicate Rule' : 'Add Rule';
+
+    isDirty = false;
+    document.getElementById('saveRuleBtn')?.classList.remove('is-dirty');
 
     // Reset form
     document.getElementById('ruleName').value = rule?.config?.name || '';
     document.getElementById('ruleGroup').value = rule?.group || 'Default';
     document.getElementById('ruleUrlFilter').value = rule?.urlFilter || '';
     document.getElementById('ruleType').value = rule?.type || 'redirect';
+    
+    // Advanced options
+    document.getElementById('rulePriority').value = rule?.config?.priority || 1;
+    const rTypes = rule?.config?.resourceTypes || ['xmlhttprequest', 'script', 'stylesheet', 'image', 'font', 'main_frame', 'sub_frame', 'media', 'websocket', 'other'];
+    document.querySelectorAll('.resource-type-cb').forEach(cb => {
+        cb.checked = rTypes.includes(cb.value);
+    });
+
+    document.getElementById('mockHeadersContainer').innerHTML = '';
+    
+    // Reset URL tester
+    document.getElementById('testUrlResult').innerHTML = '';
+    document.getElementById('testUrlResult').className = '';
+    if (document.getElementById('testUrlRedirectResult')) {
+        document.getElementById('testUrlRedirectResult').style.display = 'none';
+    }
 
     // Show appropriate config section
     updateConfigSection();
@@ -277,6 +337,12 @@ export function openRuleModal(rule = null) {
                 break;
             case 'mock':
                 document.getElementById('mockStatusCode').value = c.statusCode || 200;
+                document.getElementById('mockDelayMs').value = c.delayMs || 0;
+                
+                if (c.headers) {
+                    Object.entries(c.headers).forEach(([k, v]) => createMockHeaderRow(k, v));
+                }
+
                 if (c.cloudKey) {
                     document.getElementById('mockUseCloudToggle').checked = true;
                     document.getElementById('mockCloudKey').value = c.cloudKey;
@@ -287,6 +353,11 @@ export function openRuleModal(rule = null) {
                     document.getElementById('mockBody').value = c.body || '';
                     document.getElementById('mockLocalEditor').style.display = 'block';
                     document.getElementById('mockCloudEditor').style.display = 'none';
+                }
+                // Update body size
+                const mockBody = document.getElementById('mockBody');
+                if (mockBody) {
+                    mockBody.dispatchEvent(new Event('input'));
                 }
                 break;
             case 'delay':
@@ -315,6 +386,16 @@ function updateConfigSection() {
 function setupModals() {
     document.getElementById('addRuleBtn').addEventListener('click', () => openRuleModal());
 
+    const saveMockTemplateBtn = document.getElementById('saveMockTemplateBtn');
+    if (saveMockTemplateBtn) {
+        saveMockTemplateBtn.addEventListener('click', () => {
+            const name = document.getElementById('mockTemplateName').value.trim();
+            saveMockTemplate(name);
+            document.getElementById('mockTemplateName').value = '';
+        });
+        loadMockTemplates();
+    }
+
     const templatesModal = document.getElementById('templatesModal');
     const openTemplatesBtn = document.getElementById('openTemplatesBtn');
 
@@ -340,24 +421,47 @@ function setupModals() {
         });
     }
 
+    const ruleModal = document.getElementById('ruleModal');
+    
+    // Dirty tracking
+    const markDirty = () => {
+        isDirty = true;
+        document.getElementById('saveRuleBtn')?.classList.add('is-dirty');
+    };
+    ruleModal.addEventListener('input', (e) => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+            markDirty();
+        }
+    });
+    ruleModal.addEventListener('change', (e) => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+            markDirty();
+        }
+    });
+
+    const attemptCloseModal = () => {
+        if (isDirty) {
+            if (!confirm('You have unsaved changes. Are you sure you want to discard them?')) {
+                return;
+            }
+        }
+        ruleModal.style.display = 'none';
+    };
+
     document.getElementById('ruleType').addEventListener('change', updateConfigSection);
 
-    document.getElementById('cancelRuleBtn').addEventListener('click', () => {
-        ruleModal.style.display = 'none';
-    });
+    document.getElementById('cancelRuleBtn').addEventListener('click', attemptCloseModal);
 
     // Close modal button
     const closeBtn = document.getElementById('closeModalBtn');
     if (closeBtn) {
-        closeBtn.addEventListener('click', () => {
-            ruleModal.style.display = 'none';
-        });
+        closeBtn.addEventListener('click', attemptCloseModal);
     }
 
     // Close on outside click
     window.addEventListener('click', (e) => {
         if (e.target === ruleModal) {
-            ruleModal.style.display = 'none';
+            attemptCloseModal();
         }
     });
 
@@ -370,12 +474,148 @@ function setupModals() {
         });
     }
 
+    // URL Tester Logic
+    const toggleUrlTesterBtn = document.getElementById('toggleUrlTesterBtn');
+    const urlTesterPanel = document.getElementById('urlTesterPanel');
+    const testUrlInput = document.getElementById('testUrlInput');
+    const ruleUrlFilter = document.getElementById('ruleUrlFilter');
+    const testUrlResult = document.getElementById('testUrlResult');
+    const testUrlRedirectResult = document.getElementById('testUrlRedirectResult');
+
+    if (toggleUrlTesterBtn && urlTesterPanel) {
+        toggleUrlTesterBtn.addEventListener('click', () => {
+            const isHidden = urlTesterPanel.style.display === 'none';
+            urlTesterPanel.style.display = isHidden ? 'block' : 'none';
+            toggleUrlTesterBtn.textContent = isHidden ? 'Hide Tester' : 'Test URL Match';
+        });
+
+        const evaluateUrl = () => {
+            const url = testUrlInput.value.trim();
+            const pattern = ruleUrlFilter.value.trim();
+            if (!url || !pattern) {
+                testUrlResult.innerHTML = '';
+                testUrlResult.className = '';
+                testUrlRedirectResult.style.display = 'none';
+                return;
+            }
+            
+            const regexStr = '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$';
+            const regex = new RegExp(regexStr);
+            const isMatch = regex.test(url);
+            
+            if (isMatch) {
+                testUrlResult.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--accent-green)"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg> <span style="color:var(--accent-green)">Pattern Matches</span>';
+                testUrlResult.className = 'match-success';
+                
+                const type = document.getElementById('ruleType').value;
+                const mode = document.getElementById('redirectMode')?.value;
+                if (type === 'redirect' && mode === 'replace') {
+                    const matchPattern = document.getElementById('matchPattern')?.value.trim();
+                    const replacePattern = document.getElementById('redirectUrl')?.value.trim();
+                    if (matchPattern && replacePattern) {
+                        try {
+                            let rRegexStr = matchPattern;
+                            let rSubst = replacePattern;
+                            if (!rRegexStr.includes('(') && rRegexStr.includes('*')) {
+                                rRegexStr = rRegexStr.replace(/\\\*/g, '.*').replace(/\*/g, '(.*)');
+                                let refIdx = 0;
+                                rSubst = rSubst.replace(/\*/g, () => { refIdx++; return '$' + refIdx; });
+                            }
+                            const rRegex = new RegExp(rRegexStr);
+                            if (rRegex.test(url)) {
+                                const newUrl = url.replace(rRegex, rSubst);
+                                testUrlRedirectResult.textContent = `Redirects to: ${newUrl}`;
+                                testUrlRedirectResult.style.display = 'block';
+                            }
+                        } catch(e) {}
+                    }
+                } else {
+                     testUrlRedirectResult.style.display = 'none';
+                }
+            } else {
+                testUrlResult.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--accent-red)"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg> <span style="color:var(--accent-red)">No Match</span>';
+                testUrlResult.className = 'match-fail';
+                testUrlRedirectResult.style.display = 'none';
+            }
+        };
+
+        testUrlInput.addEventListener('input', evaluateUrl);
+        ruleUrlFilter.addEventListener('input', evaluateUrl);
+        document.getElementById('redirectUrl')?.addEventListener('input', evaluateUrl);
+        document.getElementById('matchPattern')?.addEventListener('input', evaluateUrl);
+    }
+
+    // Mock Status Preset
+    const mockStatusPreset = document.getElementById('mockStatusPreset');
+    const mockStatusCode = document.getElementById('mockStatusCode');
+    if (mockStatusPreset && mockStatusCode) {
+        mockStatusPreset.addEventListener('change', () => {
+            if (mockStatusPreset.value) mockStatusCode.value = mockStatusPreset.value;
+        });
+    }
+
+    // Mock Body Formatting & Size
+    const formatMockJsonBtn = document.getElementById('formatMockJsonBtn');
+    const minifyMockJsonBtn = document.getElementById('minifyMockJsonBtn');
+    const mockBody = document.getElementById('mockBody');
+    const mockBodySize = document.getElementById('mockBodySize');
+    
+    const updateMockBodySize = () => {
+        if (!mockBody || !mockBodySize) return;
+        const bytes = new Blob([mockBody.value]).size;
+        let formatted = bytes + ' B';
+        if (bytes > 1024) formatted = (bytes / 1024).toFixed(1) + ' KB';
+        if (bytes > 1024 * 1024) formatted = (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        mockBodySize.textContent = formatted;
+    };
+    
+    if (mockBody) mockBody.addEventListener('input', updateMockBodySize);
+
+    if (formatMockJsonBtn && mockBody) {
+        formatMockJsonBtn.addEventListener('click', () => {
+            try { mockBody.value = JSON.stringify(JSON.parse(mockBody.value), null, 2); updateMockBodySize(); }
+            catch(e) { showToast('Invalid JSON', 'error'); }
+        });
+    }
+    if (minifyMockJsonBtn && mockBody) {
+        minifyMockJsonBtn.addEventListener('click', () => {
+            try { mockBody.value = JSON.stringify(JSON.parse(mockBody.value)); updateMockBodySize(); }
+            catch(e) { showToast('Invalid JSON', 'error'); }
+        });
+    }
+
+    // Mock Headers Logic
+    const addMockHeaderBtn = document.getElementById('addMockHeaderBtn');
+    if (addMockHeaderBtn) {
+        addMockHeaderBtn.addEventListener('click', () => createMockHeaderRow());
+    }
+
+    // Mock Content-Type Chips
+    document.querySelectorAll('.content-type-chips .chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            const cType = chip.dataset.type;
+            let ctRow = null;
+            document.querySelectorAll('#mockHeadersContainer .header-mod-row').forEach(row => {
+                if (row.querySelector('.header-name').value.toLowerCase() === 'content-type') ctRow = row;
+            });
+            if (ctRow) {
+                ctRow.querySelector('.header-value').value = cType;
+            } else {
+                createMockHeaderRow('Content-Type', cType);
+            }
+            if (cType === 'application/json' && mockBody && !mockBody.value.trim()) {
+                mockBody.value = '{\n  "message": "success"\n}';
+                updateMockBodySize();
+            }
+        });
+    });
+
     document.getElementById('saveRuleBtn').addEventListener('click', async () => {
         const type = document.getElementById('ruleType').value;
         const urlFilter = document.getElementById('ruleUrlFilter').value.trim();
 
         if (!urlFilter) {
-            alert('URL pattern is required');
+            showToast('URL pattern is required', 'error');
             return;
         }
 
@@ -386,7 +626,9 @@ function setupModals() {
             group: document.getElementById('ruleGroup').value.trim() || 'Default',
             enabled: true,
             config: {
-                name: document.getElementById('ruleName').value.trim() || `${type} rule`
+                name: document.getElementById('ruleName').value.trim() || `${type} rule`,
+                priority: parseInt(document.getElementById('rulePriority').value) || 1,
+                resourceTypes: Array.from(document.querySelectorAll('.resource-type-cb:checked')).map(cb => cb.value)
             }
         };
 
@@ -419,6 +661,16 @@ function setupModals() {
                     break;
                 case 'mock':
                     rule.config.statusCode = parseInt(document.getElementById('mockStatusCode').value) || 200;
+                    rule.config.delayMs = parseInt(document.getElementById('mockDelayMs').value) || 0;
+                    
+                    const mockHeaders = {};
+                    document.querySelectorAll('#mockHeadersContainer .header-mod-row').forEach(row => {
+                        const hName = row.querySelector('.header-name').value.trim();
+                        const hValue = row.querySelector('.header-value').value.trim();
+                        if (hName) mockHeaders[hName] = hValue;
+                    });
+                    if (Object.keys(mockHeaders).length > 0) rule.config.headers = mockHeaders;
+
                     if (document.getElementById('mockUseCloudToggle').checked) {
                         rule.config.cloudKey = document.getElementById('mockCloudKey').value.trim();
                         if (!rule.config.cloudKey) throw new Error('Cloud Object Key is required when mapping to Oracle Object DB.');
@@ -434,10 +686,12 @@ function setupModals() {
             }
 
             await sendMessage('SAVE_RULE', rule);
+            isDirty = false;
+            document.getElementById('saveRuleBtn').classList.remove('is-dirty');
             ruleModal.style.display = 'none';
             await loadRules();
         } catch (e) {
-            alert('Error saving rule: ' + e.message);
+            showToast('Error saving rule: ' + e.message, 'error');
         }
     });
 
@@ -460,12 +714,14 @@ function setupModals() {
         mockCloudUploadBtn.addEventListener('click', async () => {
             const fileInput = document.getElementById('mockCloudFileInput');
             if (!fileInput.files.length) {
-                return alert('Please select a file to upload to the Cloud.');
+                showToast('Please select a file to upload to the Cloud.', 'error');
+                return;
             }
 
             const { sessionToken } = await chrome.storage.local.get('sessionToken');
             if (!sessionToken) {
-                return alert('You must be signed in to upload assets to Oracle Object DB.');
+                showToast('You must be signed in to upload assets to Oracle Object DB.', 'error');
+                return;
             }
 
             const formData = new FormData();
@@ -485,9 +741,9 @@ function setupModals() {
                 if (!res.ok) throw new Error(data.error);
 
                 document.getElementById('mockCloudKey').value = data.key;
-                alert('Successfully uploaded mock asset to Oracle Object DB!');
+                showToast('Successfully uploaded mock asset to Oracle Object DB!', 'success');
             } catch (err) {
-                alert('Upload failed: ' + err.message);
+                showToast('Upload failed: ' + err.message, 'error');
             } finally {
                 mockCloudUploadBtn.textContent = 'Upload';
                 mockCloudUploadBtn.disabled = false;
@@ -532,6 +788,84 @@ function applyTemplate(templateId) {
     const preset = templates[templateId];
     if (preset) {
         openRuleModal(preset);
-        alert('Template loaded! Adjust the URL Pattern if necessary, then click "Save Rule".');
+        showToast('Template loaded! Adjust the URL Pattern if necessary, then click "Save Rule".', 'success');
     }
+}
+
+// ─── Mock Templates ───
+
+async function saveMockTemplate(name) {
+    if (!name) {
+        showToast('Template name required', 'error');
+        return;
+    }
+    const statusCode = parseInt(document.getElementById('mockStatusCode').value) || 200;
+    const delayMs = parseInt(document.getElementById('mockDelayMs').value) || 0;
+    const body = document.getElementById('mockBody').value;
+    const headers = {};
+    document.querySelectorAll('#mockHeadersContainer .header-mod-row').forEach(row => {
+        const hName = row.querySelector('.header-name').value.trim();
+        const hValue = row.querySelector('.header-value').value.trim();
+        if (hName) headers[hName] = hValue;
+    });
+
+    const config = { statusCode, delayMs, body, headers };
+    const { nariya_mock_templates = {} } = await chrome.storage.local.get('nariya_mock_templates');
+    nariya_mock_templates[name] = config;
+    await chrome.storage.local.set({ nariya_mock_templates });
+    showToast(`Template "${name}" saved`, 'success');
+    loadMockTemplates();
+}
+
+async function loadMockTemplates() {
+    const list = document.getElementById('mockTemplatesList');
+    if (!list) return;
+    const { nariya_mock_templates = {} } = await chrome.storage.local.get('nariya_mock_templates');
+    list.innerHTML = '';
+    
+    Object.keys(nariya_mock_templates).forEach(name => {
+        const chip = document.createElement('div');
+        chip.className = 'chip';
+        chip.style = 'display: flex; align-items: center; gap: 4px; padding: 4px 8px; background: var(--bg-tertiary); border-radius: var(--radius-sm); font-size: 13px; border: 1px solid var(--border);';
+        
+        const label = document.createElement('span');
+        label.textContent = name;
+        label.style.cursor = 'pointer';
+        label.onclick = () => applyMockTemplate(nariya_mock_templates[name]);
+        
+        const delBtn = document.createElement('span');
+        delBtn.innerHTML = '&times;';
+        delBtn.style = 'cursor: pointer; color: var(--accent-red); margin-left: 4px; font-weight: bold;';
+        delBtn.onclick = () => deleteMockTemplate(name);
+        
+        chip.appendChild(label);
+        chip.appendChild(delBtn);
+        list.appendChild(chip);
+    });
+}
+
+function applyMockTemplate(template) {
+    document.getElementById('mockStatusCode').value = template.statusCode || 200;
+    document.getElementById('mockDelayMs').value = template.delayMs || 0;
+    document.getElementById('mockBody').value = template.body || '';
+    
+    document.getElementById('mockHeadersContainer').innerHTML = '';
+    if (template.headers) {
+        Object.entries(template.headers).forEach(([k, v]) => createMockHeaderRow(k, v));
+    }
+    
+    // Update body size
+    const mockBody = document.getElementById('mockBody');
+    if (mockBody) {
+        mockBody.dispatchEvent(new Event('input'));
+    }
+    showToast('Mock template applied', 'success');
+}
+
+async function deleteMockTemplate(name) {
+    const { nariya_mock_templates = {} } = await chrome.storage.local.get('nariya_mock_templates');
+    delete nariya_mock_templates[name];
+    await chrome.storage.local.set({ nariya_mock_templates });
+    showToast(`Template "${name}" deleted`, 'success');
+    loadMockTemplates();
 }

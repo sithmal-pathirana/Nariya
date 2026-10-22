@@ -1,13 +1,16 @@
 // logs-tab.js - Handles the Execution Logs UI in the dashboard
 
 import { sendMessage } from '../../shared/messaging.js';
-import { escapeHtml } from '../../shared/utils.js';
+import { escapeHtml, showToast } from '../../shared/utils.js';
 
 const executionLogsList = document.getElementById('executionLogsList');
 const clearLogsBtn = document.getElementById('clearLogsBtn');
 const exportHarBtn = document.getElementById('exportHarBtn');
+const logsFilterChips = document.querySelectorAll('#logsFilterBar .filter-chip');
+const logsSearchInput = document.getElementById('logsSearchInput');
 
 let currentLogsState = [];
+let currentLogFilter = 'all';
 
 export function initLogsTab() {
     if (!executionLogsList) return;
@@ -31,10 +34,48 @@ export function initLogsTab() {
     if (exportHarBtn) {
         exportHarBtn.addEventListener('click', () => {
             if (currentLogsState.length === 0) {
-                alert('No logs to export.');
+                showToast('No logs to export.', 'error');
                 return;
             }
             exportToHar(currentLogsState);
+        });
+    }
+
+    if (logsFilterChips) {
+        logsFilterChips.forEach(chip => {
+            chip.addEventListener('click', () => {
+                logsFilterChips.forEach(c => c.classList.remove('active'));
+                chip.classList.add('active');
+                currentLogFilter = chip.dataset.filter;
+                renderLogs();
+            });
+        });
+    }
+
+    if (logsSearchInput) {
+        logsSearchInput.addEventListener('input', () => {
+            renderLogs();
+        });
+    }
+
+    if (executionLogsList) {
+        executionLogsList.addEventListener('click', (e) => {
+            if (e.target.closest('.send-to-repeater-btn')) {
+                const btn = e.target.closest('.send-to-repeater-btn');
+                const logUrl = btn.dataset.url;
+                const logMethod = btn.dataset.method || 'GET';
+                
+                // Go to repeater tab
+                const repeaterTabBtn = document.querySelector('.nav-item[data-tab="repeater"]');
+                if (repeaterTabBtn) repeaterTabBtn.click();
+                
+                setTimeout(() => {
+                    const repUrl = document.getElementById('repeaterUrl');
+                    const repMethod = document.getElementById('repeaterMethod');
+                    if (repUrl) repUrl.value = logUrl;
+                    if (repMethod) repMethod.value = logMethod;
+                }, 100);
+            }
         });
     }
 }
@@ -95,12 +136,30 @@ export async function loadExecutionLogs() {
     const logs = res.data || [];
     currentLogsState = logs;
 
-    if (logs.length === 0) {
+    renderLogs();
+}
+
+function renderLogs() {
+    if (!executionLogsList) return;
+
+    if (currentLogsState.length === 0) {
         executionLogsList.innerHTML = '<div class="empty-state">No rules have been executed yet. Keep the extension active and browse.</div>';
         return;
     }
 
-    executionLogsList.innerHTML = logs.map(log => {
+    const searchQ = logsSearchInput ? logsSearchInput.value.toLowerCase() : '';
+    const filteredLogs = currentLogsState.filter(log => {
+        if (currentLogFilter !== 'all' && log.ruleType !== currentLogFilter) return false;
+        if (searchQ && !log.url.toLowerCase().includes(searchQ)) return false;
+        return true;
+    });
+
+    if (filteredLogs.length === 0) {
+        executionLogsList.innerHTML = '<div class="empty-state">No logs match the current filters.</div>';
+        return;
+    }
+
+    executionLogsList.innerHTML = filteredLogs.map(log => {
         const time = new Date(log.timestamp).toLocaleTimeString();
         let path = log.url;
         let host = '';
@@ -126,8 +185,13 @@ export async function loadExecutionLogs() {
                     </div>
                     <span style="color: var(--text-muted); font-size: 12px;">${time}</span>
                 </div>
-                <div style="font-family: var(--font-mono); font-size: 13px; color: var(--text-secondary);">
-                    <strong>${escapeHtml(log.method)}</strong> ${escapeHtml(host)} <span style="color: var(--text-muted);">${escapeHtml(path)}</span>
+                <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+                    <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--text-secondary);">
+                        <strong>${escapeHtml(log.method)}</strong> ${escapeHtml(host)} <span style="color: var(--text-muted);">${escapeHtml(path)}</span>
+                    </div>
+                    <button class="btn btn-ghost btn-sm send-to-repeater-btn" data-url="${escapeHtml(log.url)}" data-method="${escapeHtml(log.method)}" title="Send to Repeater" style="width:auto; padding: 2px 8px; font-size: 11px;">
+                        Send to Repeater
+                    </button>
                 </div>
             </div>
         `;

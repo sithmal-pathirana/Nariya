@@ -1,6 +1,6 @@
 // comparer-tab.js - Handles the Comparer UI in the dashboard
 
-import { diffLines, diffStats } from '../../../core/differ.js';
+import { diffLines, diffStats, diffChars } from '../../../core/differ.js';
 import { formatJson } from '../../shared/utils.js';
 
 // HTML IDs: comparerA, comparerB, compareBtn, swapInputsBtn, diffOutput, diffStats, diffContent
@@ -11,6 +11,7 @@ const rightInput = document.getElementById('comparerB');
 const diffOutputPanel = document.getElementById('diffOutput');
 const diffStatsEl = document.getElementById('diffStats');
 const diffContentEl = document.getElementById('diffContent');
+const clearComparerBtn = document.getElementById('clearComparerBtn');
 
 export function initComparerTab() {
     if (!compareBtn || !leftInput || !rightInput) {
@@ -57,6 +58,14 @@ export function initComparerTab() {
             rightInput.value = temp;
         });
     }
+    
+    if (clearComparerBtn) {
+        clearComparerBtn.addEventListener('click', () => {
+            leftInput.value = '';
+            rightInput.value = '';
+            if (diffOutputPanel) diffOutputPanel.style.display = 'none';
+        });
+    }
 }
 
 function renderDiff(changes) {
@@ -69,13 +78,43 @@ function renderDiff(changes) {
     let tableHtml = '<table class="vscode-diff-table" style="width: 100%; border-collapse: collapse; font-family: var(--code-font, monospace); font-size: 12px;">';
     let minimapHtml = '<div class="diff-minimap" style="width: 60px; height: 100%; background: var(--bg-tertiary); position: absolute; right: 0; top: 0; opacity: 0.8; overflow: hidden;">';
 
+    // Pair remove and add for character diffing
+    for (let i = 0; i < changes.length - 1; i++) {
+        if (changes[i].type === 'remove' && changes[i + 1].type === 'add') {
+            const chars = diffChars(changes[i].value, changes[i + 1].value);
+            changes[i].charDiff = chars.filter(c => c.type !== 'add');
+            changes[i + 1].charDiff = chars.filter(c => c.type !== 'remove');
+        } else if (changes[i].type === 'add' && changes[i + 1].type === 'remove') {
+            const chars = diffChars(changes[i + 1].value, changes[i].value);
+            changes[i + 1].charDiff = chars.filter(c => c.type !== 'add');
+            changes[i].charDiff = chars.filter(c => c.type !== 'remove');
+        }
+    }
+
     changes.forEach(change => {
         const lines = change.value.split('\n');
         // If the last line is just an empty string due to trailing newline, remove it
         if (lines[lines.length - 1] === '') lines.pop();
 
-        lines.forEach(lineStr => {
-            const escaped = escapeDiffHtml(lineStr);
+        let charHtmlLines = [];
+        if (change.charDiff) {
+            let fullHtml = '';
+            change.charDiff.forEach(c => {
+                const escaped = escapeDiffHtml(c.value);
+                if (c.type === 'remove') {
+                    fullHtml += `<span style="background: rgba(239, 68, 68, 0.4);">${escaped}</span>`;
+                } else if (c.type === 'add') {
+                    fullHtml += `<span style="background: rgba(34, 197, 94, 0.4);">${escaped}</span>`;
+                } else {
+                    fullHtml += escaped;
+                }
+            });
+            charHtmlLines = fullHtml.split('\n');
+            if (charHtmlLines[charHtmlLines.length - 1] === '') charHtmlLines.pop();
+        }
+
+        lines.forEach((lineStr, idx) => {
+            const escaped = charHtmlLines.length > 0 ? charHtmlLines[idx] : escapeDiffHtml(lineStr);
             let rowClass = '';
             let prefix = ' ';
             let renderOld = '';

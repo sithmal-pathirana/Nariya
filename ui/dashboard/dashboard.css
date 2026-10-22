@@ -16,6 +16,7 @@
     --border-glass: rgba(255, 255, 255, 0.06);
     --border-hover: rgba(255, 255, 255, 0.12);
     --border-glow: rgba(249, 115, 22, 0.2);
+    --border: rgba(255, 255, 255, 0.1);
 
     --text-primary: #e8e8f0;
     --text-secondary: #8888a8;
@@ -207,6 +208,21 @@ body {
     border: 1px solid var(--border-glass);
     border-radius: 20px;
     transition: var(--transition);
+}
+
+/* ─── Dirty State Indicator ─────────────────────────────────── */
+#saveRuleBtn { position: relative; }
+#saveRuleBtn.is-dirty::after {
+    content: '';
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    width: 10px;
+    height: 10px;
+    background-color: var(--accent-red);
+    border-radius: 50%;
+    border: 2px solid var(--bg-tertiary);
+    animation: pulse-dirty 2s infinite;
 }
 
 .slider::before {
@@ -1217,4 +1233,66 @@ body {
     .comparer-inputs {
         flex-direction: column;
     }
+}
+
+.interceptor-active {
+    position: relative;
+}
+.interceptor-active::after {
+    content: '';
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 8px;
+    height: 8px;
+    background: var(--accent-red);
+    border-radius: 50%;
+    box-shadow: 0 0 8px var(--accent-red);
+    animation: pulse-dirty 2s infinite;
+}
+
+/* ─── Analyzer CSS classes ───────────────────────────────────────────────── */
+.analyzer-issue-card {
+    background: var(--bg-secondary); 
+    border: 1px solid var(--border-glass); 
+    border-radius: var(--radius); 
+    padding: 12px; 
+    margin-bottom: 8px;
+}
+.analyzer-issue-header {
+    display: flex; 
+    justify-content: space-between; 
+    margin-bottom: 8px;
+}
+.analyzer-issue-badge {
+    color: #000; 
+    padding: 2px 6px; 
+    border-radius: 4px; 
+    font-size: 11px; 
+    font-weight: bold; 
+    text-transform: uppercase;
+}
+.analyzer-issue-title {
+    font-size: 14px; 
+    color: var(--text-primary);
+}
+.analyzer-issue-type {
+    color: var(--text-muted); 
+    font-size: 12px;
+}
+.analyzer-issue-meta {
+    margin-bottom: 8px; 
+    font-size: 13px; 
+    color: var(--text-secondary);
+}
+.analyzer-issue-url {
+    font-family: 'JetBrains Mono', monospace; 
+    margin-bottom: 4px;
+}
+.analyzer-issue-help {
+    background: var(--bg-tertiary); 
+    padding: 8px; 
+    border-radius: 4px; 
+    font-size: 13px; 
+    color: var(--text-secondary); 
 }

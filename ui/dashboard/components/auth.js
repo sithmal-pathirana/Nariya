@@ -1,6 +1,7 @@
 // auth.js - Handles Google OAuth2 Login & Profile state
 
 import { emitState, subscribeState } from '../../shared/state.js';
+import { showToast } from '../../shared/utils.js';
 
 const BACKEND_URL = 'http://localhost:8080'; // Would be derived from config/env in production
 
@@ -32,7 +33,7 @@ export async function initAuth() {
             updateAuthUI(user);
         } catch (error) {
             console.error('Login Failed', error);
-            alert(`Login Failed: ${error.message}`);
+            showToast(`Login Failed: ${error.message}`, 'error');
         } finally {
             googleSignInBtn.textContent = 'Sign In';
             googleSignInBtn.disabled = false;

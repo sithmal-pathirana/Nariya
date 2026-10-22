@@ -1,7 +1,7 @@
 // repeater-tab.js - Handles the Repeater UI in the dashboard
 
 import { sendMessage } from '../../shared/messaging.js';
-import { escapeHtml } from '../../shared/utils.js';
+import { escapeHtml, showToast } from '../../shared/utils.js';
 import { runInSandbox, appendToConsole, formatScriptLogs } from '../dashboard.js';
 
 // HTML IDs: repeaterMethod, repeaterUrl, repeaterHeaders, repeaterBody,
@@ -9,6 +9,7 @@ import { runInSandbox, appendToConsole, formatScriptLogs } from '../dashboard.js
 //           responseStatus, responseDuration, responseBodyContent, responseHeadersContent,
 //           preRequestScript, postResponseScript, scriptConsoleOutput
 const historyList = document.getElementById('historyList');
+const historySearch = document.getElementById('historySearch');
 const repUrlInput = document.getElementById('repeaterUrl');
 const repMethodSelect = document.getElementById('repeaterMethod');
 const repHeadersInput = document.getElementById('repeaterHeaders');
@@ -74,7 +75,7 @@ export function initRepeaterTab() {
                 entry.headers = [];
             }
         } catch (e) {
-            alert('Invalid JSON in headers:\n' + e.message);
+            showToast('Invalid JSON in headers:\n' + e.message, 'error');
             resetSendBtn();
             return;
         }
@@ -132,7 +133,10 @@ export function initRepeaterTab() {
                 repStatus.textContent = `${data.status} ${data.statusText || ''}`;
                 repStatus.className = `response-status status-${String(data.status).charAt(0)}xx`;
             }
-            if (repDuration) repDuration.textContent = `${data.time}ms`;
+            if (repDuration) {
+                const sizeStr = formatBytes(data.body ? new Blob([data.body]).size : 0);
+                repDuration.textContent = `${data.duration || 0}ms · ${sizeStr}`;
+            }
 
             let bodyText = data.body;
             try {
@@ -172,6 +176,12 @@ export function initRepeaterTab() {
             }
         });
     }
+
+    if (historySearch) {
+        historySearch.addEventListener('input', () => {
+            loadRepeaterHistory();
+        });
+    }
 }
 
 function resetSendBtn() {
@@ -187,7 +197,8 @@ function resetSendBtn() {
 }
 
 export async function loadRepeaterHistory(silent = false) {
-    const res = await sendMessage('REPEATER_GET_HISTORY');
+    const filter = historySearch ? historySearch.value.trim() : '';
+    const res = await sendMessage('REPEATER_GET_HISTORY', { urlContains: filter });
     if (!res.ok) return;
 
     currentHistory = res.data || [];

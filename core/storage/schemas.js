@@ -8,7 +8,7 @@ export const RULE_TYPES = ['redirect', 'header', 'mock', 'delay'];
 export const CONFIG_SCHEMA = {
     redirect: ['name', 'redirectUrl', 'redirectMode', 'matchPattern', 'priority', 'resourceTypes'],
     header: ['name', 'requestHeaders', 'responseHeaders', 'priority', 'resourceTypes'],
-    mock: ['name', 'statusCode', 'statusText', 'body', 'headers'],
+    mock: ['name', 'statusCode', 'statusText', 'body', 'headers', 'cloudKey', 'contentType', 'delayMs'],
     delay: ['name', 'delayMs']
 };
 

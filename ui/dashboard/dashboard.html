@@ -286,11 +286,22 @@
                     <button class="filter-chip" data-filter="script">Script</button>
                 </div>
 
+                <!-- Rule Search -->
+                <div class="rule-search-bar" style="display: flex; gap: 8px; align-items: center; margin-bottom: 12px;">
+                    <input type="text" id="ruleSearchInput" class="text-input" placeholder="Search rules by name or URL..." style="flex: 1;">
+                    <div id="bulkActionsBar" style="display: none; gap: 8px;">
+                        <button class="btn btn-ghost" id="bulkEnableBtn" title="Enable Selected">Enable</button>
+                        <button class="btn btn-ghost" id="bulkDisableBtn" title="Disable Selected">Disable</button>
+                        <button class="btn btn-ghost delete" id="bulkDeleteBtn" title="Delete Selected" style="color: var(--accent-red);">Delete</button>
+                    </div>
+                </div>
+
                 <!-- Rules Table -->
                 <div class="rules-table-container">
                     <table class="rules-table" id="rulesTable">
                         <thead>
                             <tr>
+                                <th width="30"><input type="checkbox" id="selectAllRules"></th>
                                 <th width="50">On</th>
                                 <th width="80">Type</th>
                                 <th>Name</th>
@@ -389,12 +400,16 @@
                             </div>
                             <div class="field-row">
                                 <label>Name</label>
-                                <input type="text" id="ruleName" class="text-input" placeholder="My awesome rule">
+                                <input type="text" id="editRuleName" class="text-input" placeholder="My awesome rule">
                             </div>
                             <div class="field-row">
                                 <label>Group</label>
-                                <input type="text" id="ruleGroup" class="text-input"
+                                <input type="text" id="editRuleGroup" class="text-input"
                                     placeholder="e.g. Development, Production" value="Default">
+                            </div>
+                            <div class="field-row">
+                                <label>URL</label>
+                                <input type="text" id="editUrl" class="text-input" placeholder="https://api.example.com">
                             </div>
                             <div class="field-row">
                                 <label>Headers</label>
@@ -535,6 +550,12 @@
                 <div class="panel-header">
                     <h1>Response Comparer</h1>
                     <div class="panel-actions">
+                        <button class="btn btn-ghost" id="clearComparerBtn">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            </svg>
+                            Clear
+                        </button>
                         <button class="btn btn-ghost" id="swapInputsBtn">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2">
@@ -607,6 +628,13 @@
                         </div>
                     </div>
 
+                    <div class="filter-bar" id="analyzerFilterBar" style="margin-top: 0; padding-top: 0; border: none;">
+                        <button class="filter-chip active" data-filter="all">All</button>
+                        <button class="filter-chip" data-filter="high">High</button>
+                        <button class="filter-chip" data-filter="medium">Medium</button>
+                        <button class="filter-chip" data-filter="low">Low</button>
+                    </div>
+
                     <div class="analyzer-issues" id="analyzerIssuesList"
                         style="flex: 1; display: flex; flex-direction: column; gap: 8px;">
                         <div class="empty-state">No issues detected yet. Browse the web to populate analysis data.</div>
@@ -632,6 +660,16 @@
                 </div>
 
                 <div class="logs-layout" style="display: flex; flex-direction: column; gap: 16px;">
+                    <div style="display: flex; gap: 8px; align-items: center; justify-content: space-between;">
+                        <div class="filter-bar" id="logsFilterBar" style="margin-bottom: 0;">
+                            <button class="filter-chip active" data-filter="all">All</button>
+                            <button class="filter-chip" data-filter="redirect">Redirect</button>
+                            <button class="filter-chip" data-filter="header">Header</button>
+                            <button class="filter-chip" data-filter="mock">Mock</button>
+                            <button class="filter-chip" data-filter="delay">Delay</button>
+                        </div>
+                        <input type="text" id="logsSearchInput" class="text-input" placeholder="Search logs by URL..." style="max-width: 300px;">
+                    </div>
                     <div class="logs-list" id="executionLogsList"
                         style="flex: 1; display: flex; flex-direction: column; gap: 8px;">
                         <div class="empty-state">No rules have been executed yet. Keep the extension active and browse.
@@ -669,8 +707,24 @@
                     </select>
                 </div>
                 <div class="field-row">
-                    <label>URL Pattern</label>
+                    <label style="display: flex; align-items: center; gap: 6px;">
+                        URL Pattern 
+                        <span class="regex-helper" title="Use * as wildcard. Regex capture groups like (.*) can be referenced as \1 in Replace Mode redirects." style="cursor: help; color: var(--text-muted);">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+                        </span>
+                    </label>
                     <input type="text" id="ruleUrlFilter" class="text-input" placeholder="*api.example.com*">
+                    
+                    <!-- URL Tester -->
+                    <div style="margin-top: 4px; display: flex; justify-content: flex-end;">
+                        <button type="button" class="btn btn-ghost" id="toggleUrlTesterBtn" style="font-size: 12px; padding: 2px 8px;">Test URL Match</button>
+                    </div>
+                    <div class="url-tester" id="urlTesterPanel" style="margin-top: 4px; display: none; padding: 12px; background: var(--bg-secondary); border-radius: var(--radius-sm); border: 1px solid var(--border-glass);">
+                        <label style="font-size: 12px; margin-bottom: 4px; display: block;">Test a specific URL against this pattern:</label>
+                        <input type="text" id="testUrlInput" class="text-input" placeholder="https://example.com/api/test" style="margin-bottom: 8px;">
+                        <div id="testUrlResult" style="font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 6px;"></div>
+                        <div id="testUrlRedirectResult" style="font-size: 13px; color: var(--text-muted); margin-top: 4px; display: none;"></div>
+                    </div>
                 </div>
 
                 <!-- Redirect Config -->
@@ -716,7 +770,46 @@
                 <div class="config-section" id="configMock" style="display:none;">
                     <div class="field-row">
                         <label>Status Code</label>
-                        <input type="number" id="mockStatusCode" class="text-input" value="200" min="100" max="599">
+                        <div style="display: flex; gap: 8px;">
+                            <input type="number" id="mockStatusCode" class="text-input" value="200" min="100" max="599" style="width: 100px;">
+                            <select id="mockStatusPreset" class="select-input" style="flex: 1;">
+                                <option value="">Custom...</option>
+                                <option value="200">200 — OK</option>
+                                <option value="201">201 — Created</option>
+                                <option value="204">204 — No Content</option>
+                                <option value="301">301 — Moved Permanently</option>
+                                <option value="302">302 — Found</option>
+                                <option value="400">400 — Bad Request</option>
+                                <option value="401">401 — Unauthorized</option>
+                                <option value="403">403 — Forbidden</option>
+                                <option value="404">404 — Not Found</option>
+                                <option value="500">500 — Internal Server Error</option>
+                                <option value="502">502 — Bad Gateway</option>
+                                <option value="503">503 — Service Unavailable</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="field-row">
+                        <label>Response Delay (ms)</label>
+                        <input type="number" id="mockDelayMs" class="text-input" placeholder="0" min="0" step="100">
+                    </div>
+
+                    <div class="field-row">
+                        <label>Response Headers</label>
+                        <div class="content-type-chips" style="margin-bottom: 8px; display: flex; gap: 8px;">
+                            <span style="font-size: 12px; color: var(--text-muted); display: flex; align-items: center;">Quick Type:</span>
+                            <button type="button" class="btn btn-ghost chip" data-type="application/json" style="padding: 2px 8px; font-size: 12px;">JSON</button>
+                            <button type="button" class="btn btn-ghost chip" data-type="text/html" style="padding: 2px 8px; font-size: 12px;">HTML</button>
+                            <button type="button" class="btn btn-ghost chip" data-type="text/xml" style="padding: 2px 8px; font-size: 12px;">XML</button>
+                            <button type="button" class="btn btn-ghost chip" data-type="text/plain" style="padding: 2px 8px; font-size: 12px;">Text</button>
+                        </div>
+                        <div id="mockHeadersContainer" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px;">
+                        </div>
+                        <button type="button" class="btn btn-ghost" id="addMockHeaderBtn" style="width: max-content;">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 2v12M2 8h12" /></svg>
+                            Add Header
+                        </button>
                     </div>
 
                     <div class="field-row inline" style="margin-top: 12px; margin-bottom: 8px;">
@@ -729,7 +822,14 @@
                     </div>
 
                     <div id="mockLocalEditor" class="field-row">
-                        <label>Response Body (Raw HTTP Editor)</label>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                            <label style="margin: 0;">Response Body</label>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <span id="mockBodySize" style="font-size: 12px; color: var(--text-muted);">0 B</span>
+                                <button type="button" class="btn btn-ghost" id="formatMockJsonBtn" style="padding: 2px 8px; font-size: 12px;">Format JSON</button>
+                                <button type="button" class="btn btn-ghost" id="minifyMockJsonBtn" style="padding: 2px 8px; font-size: 12px;">Minify JSON</button>
+                            </div>
+                        </div>
                         <textarea id="mockBody" class="code-input" rows="8"
                             placeholder='{"message": "Mocked response"}'></textarea>
                     </div>
@@ -743,6 +843,15 @@
                         </div>
                         <input type="text" id="mockCloudKey" class="text-input"
                             placeholder="Object Key (Auto-populated after upload)" style="margin-top: 8px;" readonly>
+                    </div>
+
+                    <div class="field-row" style="margin-top: 12px;">
+                        <label>Saved Templates</label>
+                        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                            <input type="text" id="mockTemplateName" class="text-input" placeholder="Template name..." style="flex: 1;">
+                            <button type="button" class="btn btn-ghost" id="saveMockTemplateBtn">Save as Template</button>
+                        </div>
+                        <div id="mockTemplatesList" style="display: flex; flex-wrap: wrap; gap: 8px;"></div>
                     </div>
                 </div>
 
@@ -767,6 +876,32 @@
                             placeholder="body { background: red !important; }"></textarea>
                     </div>
                 </div>
+
+                <!-- Advanced Options -->
+                <details class="advanced-options" style="margin-top: 12px;">
+                    <summary style="cursor: pointer; font-weight: 500; color: var(--text-muted); font-size: 13px; padding: 8px 0;">Advanced Options</summary>
+                    <div style="padding: 12px; background: var(--bg-secondary); border-radius: var(--radius-sm); margin-top: 4px;">
+                        <div class="field-row">
+                            <label>Priority (higher = matched first)</label>
+                            <input type="number" id="rulePriority" class="text-input" value="1" min="1" max="100" style="width: 100px;">
+                        </div>
+                        <div class="field-row">
+                            <label>Resource Types (leave all checked for default)</label>
+                            <div class="resource-type-grid" id="resourceTypeCheckboxes" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px;">
+                                <label class="resource-type-label" style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;"><input type="checkbox" class="resource-type-cb" value="xmlhttprequest" checked> XHR/Fetch</label>
+                                <label class="resource-type-label" style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;"><input type="checkbox" class="resource-type-cb" value="script" checked> Script</label>
+                                <label class="resource-type-label" style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;"><input type="checkbox" class="resource-type-cb" value="stylesheet" checked> Stylesheet</label>
+                                <label class="resource-type-label" style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;"><input type="checkbox" class="resource-type-cb" value="image" checked> Image</label>
+                                <label class="resource-type-label" style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;"><input type="checkbox" class="resource-type-cb" value="font" checked> Font</label>
+                                <label class="resource-type-label" style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;"><input type="checkbox" class="resource-type-cb" value="main_frame" checked> Document</label>
+                                <label class="resource-type-label" style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;"><input type="checkbox" class="resource-type-cb" value="sub_frame" checked> Sub Frame</label>
+                                <label class="resource-type-label" style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;"><input type="checkbox" class="resource-type-cb" value="media" checked> Media</label>
+                                <label class="resource-type-label" style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;"><input type="checkbox" class="resource-type-cb" value="websocket" checked> WebSocket</label>
+                                <label class="resource-type-label" style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;"><input type="checkbox" class="resource-type-cb" value="other" checked> Other</label>
+                            </div>
+                        </div>
+                    </div>
+                </details>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-ghost" id="cancelRuleBtn">Cancel</button>

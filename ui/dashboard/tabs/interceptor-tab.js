@@ -1,7 +1,7 @@
 // interceptor-tab.js - Handles the Interceptor UI in the dashboard
 
 import { sendMessage } from '../../shared/messaging.js';
-import { escapeHtml } from '../../shared/utils.js';
+import { escapeHtml, showToast } from '../../shared/utils.js';
 import { runInSandbox, appendToConsole, formatScriptLogs } from '../dashboard.js';
 
 const interceptorTabSelect = document.getElementById('interceptorTabSelect');
@@ -26,14 +26,14 @@ export function initInterceptorTab() {
             pausedRequestsList.innerHTML = '<div class="empty-state-sm">No paused requests</div>';
         } else {
             const tabId = parseInt(interceptorTabSelect.value);
-            if (!tabId) { alert('Select a tab first'); return; }
+            if (!tabId) { showToast('Select a tab first', 'error'); return; }
             const res = await sendMessage('DEBUGGER_ATTACH', { tabId, options: {} });
             if (res.ok) {
                 interceptorAttached = true;
                 interceptorTabId = tabId;
                 updateInterceptorStatus(true);
             } else {
-                alert('Failed to attach: ' + (res.error || 'Unknown error'));
+                showToast('Failed to attach: ' + (res.error || 'Unknown error'), 'error');
             }
         }
     });
@@ -78,7 +78,7 @@ export function initInterceptorTab() {
 
     document.getElementById('runInterceptorScriptBtn').addEventListener('click', async () => {
         const script = document.getElementById('interceptorScript').value.trim();
-        if (!script) { alert('Write a script first'); return; }
+        if (!script) { showToast('Write a script first', 'error'); return; }
 
         const request = {
             url: document.getElementById('editUrl').value,
@@ -177,6 +177,7 @@ export async function refreshInterceptorUI() {
 function updateInterceptorStatus(attached) {
     const indicator = interceptorStatus.querySelector('.status-indicator');
     const label = interceptorStatus.querySelector('span:last-child');
+    const navBtn = document.querySelector('.nav-item[data-tab="interceptor"]');
 
     if (attached) {
         indicator.className = 'status-indicator online';
@@ -184,12 +185,14 @@ function updateInterceptorStatus(attached) {
         toggleInterceptorBtn.innerHTML = `
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
       Detach`;
+        if (navBtn) navBtn.classList.add('interceptor-active');
     } else {
         indicator.className = 'status-indicator offline';
         label.textContent = 'Not attached to any tab';
         toggleInterceptorBtn.innerHTML = `
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
       Attach`;
+        if (navBtn) navBtn.classList.remove('interceptor-active');
     }
 }
 
@@ -219,6 +222,8 @@ async function loadPausedRequests() {
 
 function openRequestEditor(req) {
     requestEditor.style.display = 'block';
+    document.getElementById('editRuleName').value = '';
+    document.getElementById('editRuleGroup').value = 'Default';
     document.getElementById('editMethod').value = req.request?.method || 'GET';
     document.getElementById('editUrl').value = req.request?.url || '';
     document.getElementById('editHeaders').value = JSON.stringify(req.request?.headers || {}, null, 2);
