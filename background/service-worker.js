@@ -5,8 +5,12 @@
  */
 
 import { getAllRules, getSettings } from '../core/storage/storage.js';
-import { compileAllRules, applyRules, clearAllDnrRules, getInterceptorRules, activeRuleMap } from '../core/rules-engine.js';
+import { compileAllRules, applyRules, clearAllDnrRules, getInterceptorRules, activeRuleMap, activeDnrRules } from '../core/rules-engine.js';
 import { setupCorsBypass, syncCorsRules } from '../core/cors-bypass.js';
+import { dnrRuleMatches } from '../core/url-match.js';
+import * as recorder from '../core/recorder.js';
+import { syncInterceptorRegistration } from './content-scripts.js';
+import { proxyFetch, resolveMockBody } from './handlers/page-handler.js';
 import * as debuggerProxy from '../core/debugger-proxy.js';
 import * as repeater from '../core/repeater.js';
 import * as analyzer from '../core/analyzer.js';
@@ -67,9 +71,49 @@ debuggerProxy.setupEventListener();
 // CORS bypass: per-origin session rules kept in sync with open tabs
 setupCorsBypass();
 
+// Request recorder: webRequest capture; tell pages when recording toggles
+let lastRecordingActive = null;
+recorder.setupRecorder(async () => {
+    const state = await recorder.getState();
+    broadcastToExtensionPages({ type: 'RECORDER_UPDATED', payload: state });
+    if (state.active !== lastRecordingActive) {
+        lastRecordingActive = state.active;
+        await syncInterceptor();
+        const tabs = await chrome.tabs.query({});
+        for (const tab of tabs) {
+            if (!tab.id) continue;
+            chrome.tabs.sendMessage(tab.id, {
+                target: 'bridge',
+                type: 'RECORDING_STATE',
+                payload: { enabled: await recorder.isRecordingTab(tab.id) }
+            }).catch(() => { });
+        }
+    }
+});
+
+// The rule map lives in memory; rebuild it when the worker wakes up
+getAllRules().then(rules => compileAllRules(rules)).catch(() => { });
+
 // ═══════════════════════════════════════════════════════════════════
 //  Rule Syncing
 // ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Register the MAIN-world interceptor only while something needs it
+ */
+async function syncInterceptor() {
+    try {
+        const settings = await getSettings();
+        const rules = getInterceptorRules(await getAllRules());
+        const recording = (await recorder.getState()).active;
+        await syncInterceptorRegistration({
+            needed: settings.globalEnabled && (rules.length > 0 || recording),
+            sites: settings.interceptorSites || []
+        });
+    } catch (e) {
+        console.warn('[Nariya] Interceptor registration failed:', e);
+    }
+}
 
 /**
  * Recompile and apply all rules to declarativeNetRequest + content scripts
@@ -79,6 +123,7 @@ async function syncRules() {
 
     // Session rules are wiped on browser restart and depend on open tabs
     await syncCorsRules();
+    await syncInterceptor();
 
     if (!settings.globalEnabled) {
         await clearAllDnrRules();
@@ -96,23 +141,11 @@ async function syncRules() {
     const dnrRules = compileAllRules(allRules);
     await applyRules(dnrRules);
 
-    // 2. Push interceptor rules (mock, delay) to content scripts
-    const interceptorRules = getInterceptorRules(allRules);
-    if (interceptorRules.length > 0) {
-        // Inject the interceptor into all open tabs first
-        const tabs = await chrome.tabs.query({});
-        for (const tab of tabs) {
-            if (tab.id && tab.url && !tab.url.startsWith('chrome://') && !tab.url.startsWith('chrome-extension://')) {
-                await injectInterceptor(tab.id);
-            }
-        }
-        // Brief delay to ensure injection completes before sending rules
-        await new Promise(r => setTimeout(r, 150));
-    }
+    // 2. Push interceptor rules (mock, delay, proxy) to content scripts
     await broadcastToAllTabs({
         target: 'bridge',
         type: 'UPDATE_INTERCEPTOR_RULES',
-        payload: { rules: interceptorRules }
+        payload: { rules: getInterceptorRules(allRules) }
     });
 }
 
@@ -131,42 +164,6 @@ async function broadcastToAllTabs(message) {
         console.warn('[Nariya] Broadcast error:', e);
     }
 }
-
-/**
- * Inject the interceptor script into a specific tab (Fallback/legacy)
- */
-async function injectInterceptor(tabId) {
-    // Interceptor is now injected via manifest.json at document_start.
-    // This is kept as a no-op fallback in case of dynamic needs.
-}
-
-// ═══════════════════════════════════════════════════════════════════
-//  Tab Events — inject interceptor on navigation
-// ═══════════════════════════════════════════════════════════════════
-
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-    if (changeInfo.status !== 'complete') return;
-    if (!tab.url || tab.url.startsWith('chrome://')) return;
-
-    const settings = await getSettings();
-    if (!settings.globalEnabled) return;
-
-    const allRules = await getAllRules();
-    const interceptorRules = getInterceptorRules(allRules);
-
-    if (interceptorRules.length > 0) {
-        await injectInterceptor(tabId);
-
-        // Send rules to the newly injected interceptor
-        setTimeout(() => {
-            chrome.tabs.sendMessage(tabId, {
-                target: 'bridge',
-                type: 'UPDATE_INTERCEPTOR_RULES',
-                payload: { rules: interceptorRules }
-            }).catch(() => { });
-        }, 100);
-    }
-});
 
 // ═══════════════════════════════════════════════════════════════════
 //  Debugger Proxy Callbacks
@@ -218,12 +215,13 @@ debuggerProxy.setOnRequestPaused(async (tabId, params) => {
     }
 });
 
-debuggerProxy.setOnResponseReceived((tabId, params) => {
+debuggerProxy.setOnResponseReceived((tabId, params, request) => {
     // 1. Analyze for security vulnerabilities and best practices
     const entry = {
         url: params.response?.url || '',
-        method: 'GET', // Method is unfortunately not usually present in response Received payload
-        requestHeaders: Object.entries(params.response?.requestHeaders || {}).map(([name, value]) => ({ name, value })),
+        method: request?.method || 'GET',
+        status: params.response?.status,
+        requestHeaders: Object.entries(params.response?.requestHeaders || request?.headers || {}).map(([name, value]) => ({ name, value })),
         responseHeaders: Object.entries(params.response?.headers || {}).map(([name, value]) => ({ name, value }))
     };
 
@@ -268,39 +266,70 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Keep channel open for async responses
 });
 
+const TOAST_TITLES = { mock: 'Mock Applied', delay: 'Delay Applied', proxy: 'Sent via Nariya' };
+
 function handleBridgeMessage(message, sender, sendResponse) {
+    const tabId = sender.tab?.id;
+
     switch (message.type) {
         case 'GET_INTERCEPTOR_RULES':
-            getAllRules().then(allRules => {
-                sendResponse({ rules: getInterceptorRules(allRules) });
-            }).catch(() => sendResponse({ rules: [] }));
+            Promise.all([getAllRules(), getSettings(), recorder.isRecordingTab(tabId)])
+                .then(([allRules, settings, recording]) => sendResponse({
+                    rules: settings.globalEnabled ? getInterceptorRules(allRules) : [],
+                    recording
+                }))
+                .catch(() => sendResponse({ rules: [], recording: false }));
             break;
 
-        case 'REQUEST_INTERCEPTED':
-            if (message.payload) {
-                // Determine message based on type
-                const mType = message.payload.type;
-                let title = mType === 'mock' ? 'Mock Applied' : 'Delay Applied';
-                let msg = `Path: ${new URL(message.payload.url).pathname}`;
+        case 'PROXY_FETCH':
+            proxyFetch(message.payload || {}, sender)
+                .then(sendResponse)
+                .catch(e => sendResponse({ ok: false, error: e.message }));
+            break;
 
-                if (mType === 'mock') {
-                    msg += `\nStatus: ${message.payload.mockedResponse.status}`;
-                } else if (mType === 'delay') {
-                    msg += `\nDelay: ${message.payload.delayMs}ms`;
-                }
+        case 'RESOLVE_MOCK_BODY':
+            resolveMockBody(message.payload || {})
+                .then(sendResponse)
+                .catch(e => sendResponse({ ok: false, error: e.message }));
+            break;
 
-                // Show UI Toast back in the same tab
-                if (sender.tab && sender.tab.id) {
-                    chrome.tabs.sendMessage(sender.tab.id, {
+        case 'RECORD_BODY':
+            if (tabId !== undefined && message.payload) recorder.attachResponseBody(tabId, message.payload);
+            sendResponse({ ok: true });
+            break;
+
+        case 'REQUEST_INTERCEPTED': {
+            const p = message.payload;
+            if (p && TOAST_TITLES[p.type]) {
+                let path = p.url;
+                try { path = new URL(p.url).pathname; } catch { }
+                let msg = `Path: ${path}`;
+                if (p.type === 'mock') msg += `\nStatus: ${p.mockedResponse?.status}`;
+                if (p.type === 'delay') msg += `\nDelay: ${p.delayMs}ms`;
+                if (p.type === 'proxy') msg += `\nStatus: ${p.status}`;
+
+                executionLogs.addLog({
+                    ruleType: p.type,
+                    ruleName: TOAST_TITLES[p.type],
+                    url: p.url || '',
+                    method: p.method || 'GET',
+                    tabId
+                });
+                broadcastToExtensionPages({ type: 'EXECUTION_LOG_ADDED' });
+
+                if (tabId) {
+                    chrome.tabs.sendMessage(tabId, {
                         type: 'SHOW_NARIYA_TOAST',
-                        payload: { title, message: msg, ruleType: mType }
+                        payload: { title: TOAST_TITLES[p.type], message: msg, ruleType: p.type }
                     }).catch(() => { });
                 }
-
-                // Future implementation: Send to devtools/repeater history if needed
             }
             sendResponse({ ok: true });
             break;
+        }
+
+        default:
+            sendResponse({ ok: false, error: `Unknown bridge message: ${message.type}` });
     }
 }
 
@@ -310,38 +339,46 @@ console.log('[Nariya] Service worker loaded');
 //  DNR Rule Feedback (Toasts)
 // ═══════════════════════════════════════════════════════════════════
 
-if (chrome.declarativeNetRequest.onRuleMatchedDebug) {
-    chrome.declarativeNetRequest.onRuleMatchedDebug.addListener((info) => {
-        if (!info.request.tabId || info.request.tabId === -1) return;
+/**
+ * Log + toast for a DNR rule that hit a request
+ */
+function reportDnrMatch(ruleId, request) {
+    const rule = activeRuleMap.get(ruleId);
+    if (!rule || !request.tabId || request.tabId < 0) return;
 
-        const ruleId = info.rule.ruleId;
-        if (ruleId >= 100000) {
-            const rule = activeRuleMap.get(ruleId);
-            if (rule) {
-                // 1. Add to execution logs
-                executionLogs.addLog({
-                    ruleType: rule.type,
-                    ruleName: rule.config?.name || 'Rule Applied',
-                    url: info.request.url || '',
-                    method: info.request.method || 'GET',
-                    tabId: info.request.tabId
-                });
-
-                // 2. Broadcast to UI
-                broadcastToExtensionPages({
-                    type: 'EXECUTION_LOG_ADDED'
-                });
-
-                // 3. Send Toast to Tab
-                chrome.tabs.sendMessage(info.request.tabId, {
-                    type: 'SHOW_NARIYA_TOAST',
-                    payload: {
-                        title: rule.config?.name || 'Rule Applied',
-                        message: `Matched ${rule.urlFilter || '*'}`,
-                        ruleType: rule.type
-                    }
-                }).catch(() => { });
-            }
-        }
+    executionLogs.addLog({
+        ruleType: rule.type,
+        ruleName: rule.config?.name || 'Rule Applied',
+        url: request.url || '',
+        method: request.method || 'GET',
+        tabId: request.tabId
     });
+    broadcastToExtensionPages({ type: 'EXECUTION_LOG_ADDED' });
+
+    chrome.tabs.sendMessage(request.tabId, {
+        type: 'SHOW_NARIYA_TOAST',
+        payload: {
+            title: rule.config?.name || 'Rule Applied',
+            message: `Matched ${rule.urlFilter || '*'}`,
+            ruleType: rule.type
+        }
+    }).catch(() => { });
+}
+
+if (chrome.declarativeNetRequest.onRuleMatchedDebug) {
+    // Unpacked (developer) installs: Chrome reports every match
+    chrome.declarativeNetRequest.onRuleMatchedDebug.addListener((info) => {
+        reportDnrMatch(info.rule.ruleId, info.request);
+    });
+} else {
+    // Web Store installs: onRuleMatchedDebug does not exist, so evaluate the
+    // compiled rules against observed requests ourselves (highest priority wins)
+    chrome.webRequest.onBeforeRequest.addListener((details) => {
+        if (details.tabId < 0 || activeDnrRules.length === 0) return;
+        let best = null;
+        for (const dnrRule of activeDnrRules) {
+            if ((!best || dnrRule.priority > best.priority) && dnrRuleMatches(dnrRule, details)) best = dnrRule;
+        }
+        if (best) reportDnrMatch(best.id, details);
+    }, { urls: ['<all_urls>'] });
 }

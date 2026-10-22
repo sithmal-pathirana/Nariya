@@ -202,6 +202,88 @@ function getSites(settings) {
     return normalizeSites(settings.corsBypassSites ?? DEFAULT_CORS_SITES);
 }
 
+/**
+ * Is this origin (a page) one of the configured bypass sites?
+ */
+export function isBypassOrigin(origin, settings) {
+    return !!bypassOrigin(origin, getSites(settings));
+}
+
+// ─── Preflight log (shown in the dashboard's CORS panel) ────────
+
+const PREFLIGHT_LOG_KEY = 'nariya_cors_preflights';
+const MAX_PREFLIGHT_LOG = 50;
+let preflightLog = [];
+let preflightLogLoad = null;
+
+function preflightLogReady() {
+    preflightLogLoad ??= chrome.storage.session.get(PREFLIGHT_LOG_KEY)
+        .then(r => { preflightLog = r[PREFLIGHT_LOG_KEY] || []; })
+        .catch(() => { });
+    return preflightLogLoad;
+}
+
+async function logPreflight(entry) {
+    await preflightLogReady();
+    preflightLog.unshift(entry);
+    preflightLog = preflightLog.slice(0, MAX_PREFLIGHT_LOG);
+    chrome.storage.session.set({ [PREFLIGHT_LOG_KEY]: preflightLog }).catch(() => { });
+}
+
+async function onPreflightDone(details) {
+    if (details.method !== 'OPTIONS' || !details.initiator) return;
+    const settings = await getSettings();
+    if (!settings.globalEnabled || !settings.allowCorsBypass) return;
+    if (!isBypassOrigin(details.initiator, settings)) return;
+
+    const status = details.statusCode || 0;
+    const ok = !details.error && status >= 200 && status < 300;
+    await logPreflight({
+        ts: Date.now(),
+        url: details.url,
+        initiator: details.initiator,
+        status,
+        error: details.error || null,
+        ok,
+        hint: ok ? null : details.error
+            ? 'The preflight did not complete (network error).'
+            : `The server answered the preflight with HTTP ${status}. Headers cannot fix that; add a "Proxy" rule for this URL.`
+    });
+}
+
+/**
+ * Everything the dashboard's CORS panel shows
+ */
+export async function getCorsStatus() {
+    await preflightLogReady();
+    const settings = await getSettings();
+    const rules = await chrome.declarativeNetRequest.getSessionRules();
+    const active = rules
+        .filter(r => r.id >= CORS_RULE_ID_BASE && r.id <= CORS_RULE_ID_MAX)
+        .map(r => ({
+            origin: r.action.responseHeaders.find(h => h.header === 'Access-Control-Allow-Origin')?.value,
+            scope: r.condition.tabIds ? 'tab' : 'host'
+        }));
+    return {
+        enabled: !!(settings.globalEnabled && settings.allowCorsBypass),
+        sites: getSites(settings),
+        origins: [...new Set(active.map(a => a.origin))],
+        learnedHeaders: await getLearnedHeaders(),
+        preflights: preflightLog
+    };
+}
+
+export async function clearLearnedHeaders() {
+    await chrome.storage.local.remove(LEARNED_HEADERS_KEY);
+    await syncCorsRules();
+}
+
+export async function clearPreflightLog() {
+    await preflightLogReady();
+    preflightLog = [];
+    await chrome.storage.session.remove(PREFLIGHT_LOG_KEY).catch(() => { });
+}
+
 // ─── Rule sync (serialized to avoid duplicate-ID races) ─────────
 
 let syncChain = Promise.resolve();
@@ -300,5 +382,13 @@ export function setupCorsBypass() {
         (details) => { learnPreflightHeaders(details); },
         { urls: ['<all_urls>'], types: ['xmlhttprequest', 'other'] },
         ['requestHeaders', 'extraHeaders']
+    );
+
+    const preflightFilter = { urls: ['<all_urls>'], types: ['xmlhttprequest', 'other'] };
+    chrome.webRequest.onCompleted.addListener(
+        (details) => { onPreflightDone(details); }, preflightFilter, ['extraHeaders']
+    );
+    chrome.webRequest.onErrorOccurred.addListener(
+        (details) => { onPreflightDone(details); }, preflightFilter, ['extraHeaders']
     );
 }

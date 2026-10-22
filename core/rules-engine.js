@@ -26,6 +26,9 @@ const MAX_SESSION_RULES = 5000;
 // Exported map of DNR Rule ID -> User Rule details
 export const activeRuleMap = new Map();
 
+// Compiled DNR rules currently applied (for match detection in packed builds)
+export const activeDnrRules = [];
+
 /**
  * Convert a user-friendly URL pattern to a declarativeNetRequest urlFilter
  * @param {string} pattern
@@ -175,6 +178,7 @@ function compileRule(rule, ruleId) {
 
         case 'mock':
         case 'delay':
+        case 'proxy':
             return null;
 
         default:
@@ -194,12 +198,14 @@ export function compileAllRules(userRules) {
     let ruleId = RULE_ID_BASE;
 
     activeRuleMap.clear();
+    activeDnrRules.length = 0;
 
     for (const rule of userRules) {
         const compiled = compileRule(rule, ruleId);
         if (compiled) {
             dnrRules.push(compiled);
             activeRuleMap.set(ruleId, rule);
+            activeDnrRules.push(compiled);
             ruleId++;
         }
     }
@@ -282,13 +288,13 @@ export async function clearAllDnrRules() {
 }
 
 /**
- * Get content-script-handled rules (mock, delay)
+ * Get content-script-handled rules (mock, delay, proxy)
  * These bypass DNR and are sent to the content script interceptor.
  * @param {Array} userRules
  * @returns {Array}
  */
 export function getInterceptorRules(userRules) {
     return userRules.filter(
-        r => r.enabled && (r.type === 'mock' || r.type === 'delay')
+        r => r.enabled && (r.type === 'mock' || r.type === 'delay' || r.type === 'proxy')
     );
 }

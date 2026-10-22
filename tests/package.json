@@ -1,0 +1,14 @@
+{
+  "name": "nariya-tests",
+  "private": true,
+  "type": "module",
+  "description": "Unit and end-to-end tests for the Nariya extension",
+  "scripts": {
+    "test": "node --test --test-concurrency=1 unit/ e2e/",
+    "test:unit": "node --test unit/",
+    "test:e2e": "node --test --test-concurrency=1 e2e/"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1"
+  }
+}

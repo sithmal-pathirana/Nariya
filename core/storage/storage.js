@@ -21,6 +21,10 @@ const DEFAULT_SETTINGS = {
   corsBypassSites: ['localhost', '127.0.0.1'],
   // Extra request header names to allow on credentialed preflights
   corsAllowHeaders: [],
+  // Pages where mock / delay / proxy rules and the recorder run (empty = all)
+  interceptorSites: [],
+  // Nariya Cloud backend (auth, rule sync, cloud mocks)
+  backendUrl: 'http://localhost:8080',
   interceptorAutoMutate: false,
   interceptorAutoMutateScript: '',
   enableCloudSync: false
@@ -206,10 +210,7 @@ async function syncToCloud(rules) {
     const { sessionToken } = await chrome.storage.local.get('sessionToken');
     if (!sessionToken) return; // Unauthenticated
 
-    // Use environment config in production
-    const BACKEND_URL = 'http://localhost:8080';
-
-    await fetch(`${BACKEND_URL}/api/rules/sync`, {
+    await fetch(`${settings.backendUrl}/api/rules/sync`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
