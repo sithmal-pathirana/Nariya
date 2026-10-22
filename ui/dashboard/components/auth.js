@@ -2,8 +2,20 @@
 
 import { emitState, subscribeState } from '../../shared/state.js';
 import { showToast } from '../../shared/utils.js';
+import { sendMessage } from '../../shared/messaging.js';
 
-const BACKEND_URL = 'http://localhost:8080'; // Would be derived from config/env in production
+async function getBackendUrl() {
+    const res = await sendMessage('GET_SETTINGS');
+    return res.data?.backendUrl || 'http://localhost:8080';
+}
+
+/**
+ * chrome.identity needs a real OAuth client ID in manifest.json
+ */
+function hasOAuthClientId() {
+    const clientId = chrome.runtime.getManifest().oauth2?.client_id || '';
+    return clientId.endsWith('.apps.googleusercontent.com') && !clientId.startsWith('YOUR_');
+}
 
 const googleSignInBtn = document.getElementById('googleSignInBtn');
 const googleSignOutBtn = document.getElementById('googleSignOutBtn');
@@ -21,7 +33,16 @@ export async function initAuth() {
         updateAuthUI(userProfile);
     }
 
+    if (!hasOAuthClientId()) {
+        googleSignInBtn.disabled = true;
+        googleSignInBtn.title = 'Set oauth2.client_id in manifest.json to enable Google sign-in (see README).';
+    }
+
     googleSignInBtn.addEventListener('click', async () => {
+        if (!hasOAuthClientId()) {
+            showToast('Google sign-in is not configured: set oauth2.client_id in manifest.json (see README).', 'error');
+            return;
+        }
         try {
             googleSignInBtn.textContent = 'Authenticating...';
             googleSignInBtn.disabled = true;
@@ -83,7 +104,7 @@ async function authenticateWithGoogle() {
 }
 
 async function verifyWithBackend(token) {
-    const res = await fetch(`${BACKEND_URL}/api/auth/google`, {
+    const res = await fetch(`${await getBackendUrl()}/api/auth/google`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token })

@@ -92,7 +92,9 @@ recorder.setupRecorder(async () => {
 });
 
 // The rule map lives in memory; rebuild it when the worker wakes up
-getAllRules().then(rules => compileAllRules(rules)).catch(() => { });
+Promise.all([getAllRules(), getSettings()])
+    .then(([rules, settings]) => compileAllRules(settings.globalEnabled ? rules : []))
+    .catch(() => { });
 
 // ═══════════════════════════════════════════════════════════════════
 //  Rule Syncing
@@ -126,6 +128,7 @@ async function syncRules() {
     await syncInterceptor();
 
     if (!settings.globalEnabled) {
+        compileAllRules([]); // empty the in-memory rule maps too
         await clearAllDnrRules();
         await broadcastToAllTabs({
             target: 'bridge',

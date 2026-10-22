@@ -8,7 +8,10 @@ import { initRepeaterTab, loadRepeaterHistory } from './tabs/repeater-tab.js';
 import { initComparerTab } from './tabs/comparer-tab.js';
 import { initAnalyzerTab, loadAnalyzerIssues } from './tabs/analyzer-tab.js';
 import { initLogsTab, loadExecutionLogs } from './tabs/logs-tab.js';
+import { initRecorderTab, loadRecorder, refreshRecorderTabs } from './tabs/recorder-tab.js';
 import { initAuth } from './components/auth.js';
+import { initCorsPanel, loadCorsStatus } from './components/cors-panel.js';
+import { matchesUrl, dnrUrlFilterToRegExp } from '../../core/url-match.js';
 
 // ─── DOM Elements ───
 const navButtons = document.querySelectorAll('.nav-item');
@@ -56,6 +59,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (btn.dataset.tab === 'repeater') loadRepeaterHistory();
                 if (btn.dataset.tab === 'analyzer') loadAnalyzerIssues();
                 if (btn.dataset.tab === 'logs') loadExecutionLogs();
+                if (btn.dataset.tab === 'settings') loadCorsStatus();
+                if (btn.dataset.tab === 'recorder') { refreshRecorderTabs(); loadRecorder(); }
             }
         });
     });
@@ -67,6 +72,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initComparerTab();
     initAnalyzerTab();
     initLogsTab();
+    initRecorderTab();
 
     // 4. Initialize Auth Integration
     initAuth();
@@ -106,6 +112,8 @@ const corsToggle = document.getElementById('corsToggle');
 const corsSitesInput = document.getElementById('corsSitesInput');
 const corsHeadersInput = document.getElementById('corsHeadersInput');
 const saveCorsSettingsBtn = document.getElementById('saveCorsSettingsBtn');
+const interceptorSitesInput = document.getElementById('interceptorSitesInput');
+const backendUrlInput = document.getElementById('backendUrlInput');
 const cloudSyncToggle = document.getElementById('cloudSyncToggle');
 
 async function loadSettings() {
@@ -115,6 +123,8 @@ async function loadSettings() {
         if (corsToggle) corsToggle.checked = res.data.allowCorsBypass !== false;
         if (corsSitesInput) corsSitesInput.value = (res.data.corsBypassSites || []).join('\n');
         if (corsHeadersInput) corsHeadersInput.value = (res.data.corsAllowHeaders || []).join(', ');
+        if (interceptorSitesInput) interceptorSitesInput.value = (res.data.interceptorSites || []).join('\n');
+        if (backendUrlInput) backendUrlInput.value = res.data.backendUrl || '';
         if (cloudSyncToggle) cloudSyncToggle.checked = res.data.enableCloudSync === true;
         if (res.data.theme === 'light') {
             document.body.classList.add('light-theme');
@@ -167,8 +177,34 @@ if (saveCorsSettingsBtn) {
             corsAllowHeaders: toList(corsHeadersInput.value)
         });
         showToast(res.ok ? 'CORS settings saved' : 'Failed to save CORS settings', res.ok ? 'success' : 'error');
+        loadCorsStatus();
     });
 }
+
+document.getElementById('saveInterceptorSettingsBtn')?.addEventListener('click', async () => {
+    const sites = interceptorSitesInput.value.split(/[\s,]+/).map(v => v.trim()).filter(Boolean);
+    const res = await sendMessage('UPDATE_SETTINGS', { interceptorSites: sites });
+    showToast(res.ok ? 'Interceptor settings saved' : 'Failed to save', res.ok ? 'success' : 'error');
+});
+
+document.getElementById('saveBackendUrlBtn')?.addEventListener('click', async () => {
+    const value = backendUrlInput.value.trim().replace(/\/+$/, '');
+    try {
+        const u = new URL(value);
+        if (!/^https?:$/.test(u.protocol)) throw new Error();
+    } catch {
+        showToast('Enter a valid http(s) URL', 'error');
+        return;
+    }
+    const res = await sendMessage('UPDATE_SETTINGS', { backendUrl: value });
+    showToast(res.ok ? 'Backend URL saved' : 'Failed to save', res.ok ? 'success' : 'error');
+});
+
+initCorsPanel({
+    onCreateProxyRule: (urlFilter) => {
+        openRuleModal({ type: 'proxy', urlFilter, config: { name: `Proxy ${urlFilter}` } });
+    }
+});
 
 if (cloudSyncToggle) {
     cloudSyncToggle.addEventListener('change', async () => {
@@ -393,7 +429,8 @@ function updateConfigSection() {
         'redirect': 'configRedirect',
         'header': 'configHeader',
         'mock': 'configMock',
-        'delay': 'configDelay'
+        'delay': 'configDelay',
+        'proxy': 'configProxy'
     };
     const section = document.getElementById(sectionMap[type]);
     if (section) section.style.display = 'block';
@@ -515,9 +552,15 @@ function setupModals() {
                 return;
             }
             
-            const regexStr = '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$';
-            const regex = new RegExp(regexStr);
-            const isMatch = regex.test(url);
+            // Same matching the rules use: DNR urlFilter for redirect/header,
+            // the interceptor's matcher for mock/delay/proxy
+            const ruleType = document.getElementById('ruleType').value;
+            let isMatch = false;
+            try {
+                isMatch = ['redirect', 'header'].includes(ruleType)
+                    ? dnrUrlFilterToRegExp(pattern.startsWith('|') || pattern.includes('*') || pattern.includes('^') ? pattern : `*${pattern}*`).test(url)
+                    : matchesUrl(url, pattern);
+            } catch { /* invalid pattern */ }
             
             if (isMatch) {
                 testUrlResult.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--accent-green)"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg> <span style="color:var(--accent-green)">Pattern Matches</span>';
@@ -747,7 +790,8 @@ function setupModals() {
                 mockCloudUploadBtn.textContent = 'Uploading...';
                 mockCloudUploadBtn.disabled = true;
 
-                const res = await fetch('http://localhost:8080/api/mocks/upload', {
+                const { data: settings } = await sendMessage('GET_SETTINGS');
+                const res = await fetch(`${settings.backendUrl}/api/mocks/upload`, {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${sessionToken}` },
                     body: formData
@@ -770,17 +814,10 @@ function setupModals() {
 
 function applyTemplate(templateId) {
     const templates = {
-        'cors': {
-            type: 'header',
-            urlFilter: '*',
-            config: {
-                name: 'Bypass CORS Restrictions',
-                responseHeaders: [
-                    { header: 'Access-Control-Allow-Origin', value: '*', operation: 'set', target: 'response' },
-                    { header: 'Access-Control-Allow-Methods', value: '*', operation: 'set', target: 'response' },
-                    { header: 'Access-Control-Allow-Headers', value: '*', operation: 'set', target: 'response' }
-                ]
-            }
+        'proxy': {
+            type: 'proxy',
+            urlFilter: 'api.example.com/',
+            config: { name: 'Send API calls via Nariya' }
         },
         'mock500': {
             type: 'mock',
@@ -800,6 +837,17 @@ function applyTemplate(templateId) {
             }
         }
     };
+
+    if (templateId === 'cors') {
+        // A header rule with "*" breaks credentialed requests and other sites;
+        // the built-in bypass does it properly, so switch that on instead
+        sendMessage('UPDATE_SETTINGS', { allowCorsBypass: true }).then(() => {
+            if (corsToggle) corsToggle.checked = true;
+            document.querySelector('.nav-item[data-tab="settings"]')?.click();
+            showToast('CORS Bypass is on. Add your frontend\'s address under "Bypass CORS for requests made by these sites".', 'success');
+        });
+        return;
+    }
 
     const preset = templates[templateId];
     if (preset) {

@@ -11,14 +11,16 @@ Named after the clever fox, Nariya gives you the cunning tools needed to interce
 ### 🛠️ Request Management
 - **Smart Redirection:** Redirect URLs using simple wildcards (`*`) or powerful regex patterns.
 - **Header Modification:** Add, remove, or modify request and response headers globally or for specific domains.
-- **CORS-Free Development:** Pages on your dev sites (default `localhost`, `127.0.0.1`; configurable in Settings) can call any API cross-origin in a normal Chrome profile — preflights, cookies and `Authorization` included. `Access-Control-Allow-Origin` is set to the page's exact origin, and other sites (Gmail, Google Chat, ...) are left untouched. Limitation: if the API answers the preflight `OPTIONS` with a non-2xx status, Chrome rejects it before any extension can help.
+- **CORS-Free Development:** Pages on your dev sites (default `localhost`, `127.0.0.1`; configurable in Settings) can call any API cross-origin in a normal Chrome profile — preflights, cookies and `Authorization` included. `Access-Control-Allow-Origin` is set to the page's exact origin, and other sites (Gmail, Google Chat, ...) are left untouched. The **CORS Status** panel in Settings shows active origins, learned headers and recent preflights.
+- **Send via Nariya (Proxy rules):** If an API answers the preflight `OPTIONS` with 401/404/405, no header can fix it. A Proxy rule makes Nariya's background worker perform matching fetch/XHR calls instead of the page, so there is no CORS check and no preflight. The API sees your page's `Origin`. Only for pages on the CORS bypass sites. The CORS Status panel offers "Create proxy rule" next to any rejected preflight.
 
 ### 🔍 Deep Network Inspection
 - **CDP-Powered Interception:** Uses the Chrome Debugger API to pause requests and responses, allowing for manual inspection and modification before they reach their destination.
 - **Repeater:** Replay any intercepted request with custom modifications to headers, body, or URL. Perfect for API testing.
+- **Request Recorder → Postman:** Record a tab's API calls (method, URL, headers, body, status and response body), then export a **Postman v2.1 collection** with a `{{baseUrl}}` variable per host, tokens moved into `{{authToken}}`/`{{apiKey}}` variables, one request per endpoint, example responses and generated tests (status code, content type, response fields, response time). HAR export too.
 
 ### 🎭 Content Manipulation
-- **Mocking:** Replace server responses with custom JSON, HTML, or plain text.
+- **Mocking:** Replace server responses with custom JSON, HTML, or plain text, with optional delay, custom headers and cloud-stored bodies. Works for `fetch` and `XMLHttpRequest` (including `responseType`, `getResponseHeader` and the usual events).
 - **Script Injection:** Inject custom JavaScript into pages to automate tasks or debug client-side logic in a secure sandbox.
 - **Network Delays:** Simulate slow network conditions by adding artificial latency to specific requests.
 
@@ -35,21 +37,34 @@ Named after the clever fox, Nariya gives you the cunning tools needed to interce
 4.  **Load Unpacked:** Click the **"Load unpacked"** button and select the `Nariya` project directory.
 5.  **Pin the Extension:** Find the Nariya "Fox" icon in your extension bar and pin it for quick access.
 
+### Google sign-in (optional, for Nariya Cloud)
+Google sign-in uses `chrome.identity`, which needs a real OAuth client ID:
+1. In Google Cloud Console create an **OAuth client ID** of type **Chrome extension**, using your extension ID from `chrome://extensions`.
+2. Put it in `manifest.json` under `oauth2.client_id` and reload the extension.
+3. Set the backend address under **Settings → Storage Provider → Nariya Cloud backend URL** (default `http://localhost:8080`).
+
+Until then the Sign In button stays disabled; everything else works locally.
+
+### Packaging for the Chrome Web Store
+Zip the extension without the development folders: `backend/`, `infra/`, `tests/` and `.github/`.
+
 ---
 
 ## 📂 Project Structure
 
--   `background/`: Contains the global service worker that manages the extension's lifecycle and core events.
--   `content/`: Scripts that run in the context of the web page to intercept Fetch/XHR and bridge communication.
--   `lib/`: The core logic engine:
-    -   `rules-engine.js`: Compiles user rules into high-performance `declarativeNetRequest` rules.
-    -   `debugger-proxy.js`: High-level wrapper for the Chrome Debugger Protocol.
-    -   `repeater.js`: Manages request history and replaying logic.
--   `ui/`: The user interface components:
-    -   `dashboard/`: The main management console for rules and history.
-    -   `popup/`: Quick actions and status toggle.
-    -   `sandbox/`: Secure environment for executing custom scripts.
--   `icons/`: Branding assets featuring the Nariya Fox.
+-   `background/`: Service worker, message router, interceptor registration and handlers (rules, debugger, repeater, page calls such as proxy fetches).
+-   `content/`: `bridge.js` (isolated world, all pages) and `interceptor.js` (page world, registered only while mock/delay/proxy rules or the recorder need it). They talk over a private `MessageChannel`.
+-   `core/`: The logic engine:
+    -   `rules-engine.js`: Compiles user rules into `declarativeNetRequest` rules.
+    -   `cors-bypass.js`: Scoped CORS bypass (per-origin session rules, learned headers, preflight log).
+    -   `recorder.js` / `postman.js`: Request recorder and Postman/HAR export.
+    -   `url-match.js`: URL pattern matching shared by rules and the dashboard's URL tester.
+    -   `debugger-proxy.js`: Wrapper for the Chrome Debugger Protocol.
+    -   `repeater.js`: Request history and replay.
+-   `ui/`: Dashboard, popup and shared UI helpers.
+-   `sandbox/`: Secure environment for executing custom scripts.
+-   `tests/`: Unit tests and Playwright end-to-end tests that load the extension into Chromium.
+-   `backend/`, `infra/`: Optional Nariya Cloud backend and deployment.
 
 ---
 
@@ -65,6 +80,19 @@ Named after the clever fox, Nariya gives you the cunning tools needed to interce
 - Toggle the entire extension **On/Off**.
 - Access quick links to the Dashboard or Documentation.
 - View current tab status.
+
+---
+
+## 🧪 Tests
+
+```bash
+cd tests
+npm install
+npx playwright install chromium   # full Chromium; the headless shell cannot load extensions
+npm test                          # or: npm run test:unit / npm run test:e2e
+```
+
+The end-to-end tests start local servers, load the unpacked extension into Chromium with no special flags, and check CORS, mocks, delays, proxy rules, the recorder and the dashboard. They run on every push via GitHub Actions (`.github/workflows/test.yml`).
 
 ---
 

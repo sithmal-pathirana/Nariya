@@ -175,6 +175,7 @@ function renderLogs() {
         if (log.ruleType === 'header') badgeColor = '#8b5cf6';
         if (log.ruleType === 'mock') badgeColor = '#10b981';
         if (log.ruleType === 'delay') badgeColor = '#f59e0b';
+        if (log.ruleType === 'proxy') badgeColor = '#06b6d4';
 
         return `
             <div class="log-item" style="background: var(--bg-secondary); border-left: 3px solid ${badgeColor}; padding: 12px; margin-bottom: 8px; border-radius: 4px;">
