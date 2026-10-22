@@ -6,6 +6,7 @@
 
 import { getAllRules, getSettings } from '../core/storage/storage.js';
 import { compileAllRules, applyRules, clearAllDnrRules, getInterceptorRules, activeRuleMap } from '../core/rules-engine.js';
+import { setupCorsBypass, syncCorsRules } from '../core/cors-bypass.js';
 import * as debuggerProxy from '../core/debugger-proxy.js';
 import * as repeater from '../core/repeater.js';
 import * as analyzer from '../core/analyzer.js';
@@ -63,6 +64,9 @@ chrome.runtime.onStartup.addListener(async () => {
 // Setup debugger event listener
 debuggerProxy.setupEventListener();
 
+// CORS bypass: per-origin session rules kept in sync with open tabs
+setupCorsBypass();
+
 // ═══════════════════════════════════════════════════════════════════
 //  Rule Syncing
 // ═══════════════════════════════════════════════════════════════════
@@ -72,6 +76,9 @@ debuggerProxy.setupEventListener();
  */
 async function syncRules() {
     const settings = await getSettings();
+
+    // Session rules are wiped on browser restart and depend on open tabs
+    await syncCorsRules();
 
     if (!settings.globalEnabled) {
         await clearAllDnrRules();
@@ -86,7 +93,7 @@ async function syncRules() {
     const allRules = await getAllRules();
 
     // 1. Compile & apply DNR rules (redirect, header)
-    const dnrRules = compileAllRules(allRules, settings);
+    const dnrRules = compileAllRules(allRules);
     await applyRules(dnrRules);
 
     // 2. Push interceptor rules (mock, delay) to content scripts

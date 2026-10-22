@@ -17,6 +17,10 @@ const DEFAULT_SETTINGS = {
   maxRepeaterHistory: 500,
   theme: 'dark',
   allowCorsBypass: true,
+  // Pages (initiators) whose cross-origin requests get CORS headers patched
+  corsBypassSites: ['localhost', '127.0.0.1'],
+  // Extra request header names to allow on credentialed preflights
+  corsAllowHeaders: [],
   interceptorAutoMutate: false,
   interceptorAutoMutateScript: '',
   enableCloudSync: false

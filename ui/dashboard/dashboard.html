@@ -113,9 +113,11 @@
                             style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
                             <div>
                                 <strong>CORS Bypass</strong>
-                                <p style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Automatically
-                                    intercepts Preflight requests and injects
-                                    <code>Access-Control-Allow-Origin: *</code>.
+                                <p style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Lets pages on
+                                    the sites below call any API cross-origin (including preflights, cookies and
+                                    <code>Authorization</code>) in a normal Chrome profile. Responses get
+                                    <code>Access-Control-Allow-Origin</code> set to the page's exact origin.
+                                    Other sites (Gmail, Google Chat, ...) are never touched.
                                 </p>
                             </div>
                             <label class="toggle-switch">
@@ -123,6 +125,30 @@
                                 <span class="slider"></span>
                             </label>
                         </div>
+
+                        <div class="form-group" style="margin-bottom: 12px;">
+                            <label for="corsSitesInput" style="font-size: 13px; font-weight: 600;">Bypass CORS for
+                                requests made by these sites</label>
+                            <textarea id="corsSitesInput" class="code-input" rows="3"
+                                placeholder="localhost&#10;127.0.0.1&#10;dev.myapp.com"
+                                style="width: 100%; font-family: var(--font-mono, monospace); font-size: 12px; margin-top: 6px;"></textarea>
+                            <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">One host per line
+                                (subdomains included). Use the address of your <em>frontend</em>, not the API.
+                                Only add sites you trust: their pages can read cross-origin responses with your
+                                cookies.</p>
+                        </div>
+
+                        <div class="form-group" style="margin-bottom: 12px;">
+                            <label for="corsHeadersInput" style="font-size: 13px; font-weight: 600;">Extra allowed
+                                request headers (optional)</label>
+                            <input type="text" id="corsHeadersInput" class="text-input"
+                                placeholder="x-my-header, x-feature-flag"
+                                style="width: 100%; font-family: var(--font-mono, monospace); font-size: 12px; margin-top: 6px;">
+                            <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Common headers
+                                are allowed already, and new ones seen on preflights are learned automatically.</p>
+                        </div>
+
+                        <button id="saveCorsSettingsBtn" class="btn btn-primary">Save CORS Settings</button>
                     </div>
 
                     <!-- Storage Configuration -->

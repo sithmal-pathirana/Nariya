@@ -24,7 +24,7 @@ async function bootstrap() {
 
     // 3. Listen for changes
     globalEnableToggle.addEventListener('change', async () => {
-        await sendMessage('UPDATE_SETTINGS', { updates: { globalEnabled: globalEnableToggle.checked } });
+        await sendMessage('UPDATE_SETTINGS', { globalEnabled: globalEnableToggle.checked });
     });
 
     openDashboardBtn.addEventListener('click', () => {

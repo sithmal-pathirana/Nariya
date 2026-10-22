@@ -11,7 +11,7 @@ Named after the clever fox, Nariya gives you the cunning tools needed to interce
 ### 🛠️ Request Management
 - **Smart Redirection:** Redirect URLs using simple wildcards (`*`) or powerful regex patterns.
 - **Header Modification:** Add, remove, or modify request and response headers globally or for specific domains.
-- **CORS-Free Development:** Automatically injects CORS headers (`Access-Control-Allow-Origin: *`) to simplify integration between different local services.
+- **CORS-Free Development:** Pages on your dev sites (default `localhost`, `127.0.0.1`; configurable in Settings) can call any API cross-origin in a normal Chrome profile — preflights, cookies and `Authorization` included. `Access-Control-Allow-Origin` is set to the page's exact origin, and other sites (Gmail, Google Chat, ...) are left untouched. Limitation: if the API answers the preflight `OPTIONS` with a non-2xx status, Chrome rejects it before any extension can help.
 
 ### 🔍 Deep Network Inspection
 - **CDP-Powered Interception:** Uses the Chrome Debugger API to pause requests and responses, allowing for manual inspection and modification before they reach their destination.

@@ -4,8 +4,20 @@
  * and manages dynamic/session rule registration.
  */
 
-// Rule ID offset to prevent collisions with other extensions
+import { CORS_RULE_ID_BASE } from './cors-bypass.js';
+
+// Rule ID offset to prevent collisions with other extensions.
+// User rules use [RULE_ID_BASE, CORS_RULE_ID_BASE); CORS rules sit above.
 const RULE_ID_BASE = 100000;
+
+const isUserRuleId = (id) => id >= RULE_ID_BASE && id < CORS_RULE_ID_BASE;
+
+const ALL_RESOURCE_TYPES = [
+    'main_frame', 'sub_frame', 'stylesheet', 'script',
+    'image', 'font', 'object', 'xmlhttprequest', 'ping',
+    'csp_report', 'media', 'websocket', 'webtransport',
+    'webbundle', 'other'
+];
 
 // Maximum rules per scope
 const MAX_DYNAMIC_RULES = 5000;
@@ -57,17 +69,16 @@ function parseHeader(str) {
 function compileRule(rule, ruleId) {
     if (!rule.enabled) return null;
 
+    // Use the user's selection, or every type when nothing (or everything) is
+    // selected. Omitting resourceTypes is NOT "match all": DNR then skips
+    // main_frame, and an empty array makes the whole rule update fail.
+    const selectedTypes = rule.config?.resourceTypes;
     const condition = {
-        urlFilter: toUrlFilter(rule.urlFilter || '*')
+        urlFilter: toUrlFilter(rule.urlFilter || '*'),
+        resourceTypes: Array.isArray(selectedTypes) && selectedTypes.length > 0 && selectedTypes.length < 10
+            ? selectedTypes
+            : ALL_RESOURCE_TYPES
     };
-
-    // Only restrict resource types when the user has explicitly selected
-    // a subset via the UI checkboxes. Otherwise omit to match everything.
-    if (rule.config?.resourceTypes) {
-        if (rule.config.resourceTypes.length < 10) {
-            condition.resourceTypes = rule.config.resourceTypes;
-        }
-    }
 
     switch (rule.type) {
         case 'redirect': {
@@ -173,12 +184,12 @@ function compileRule(rule, ruleId) {
 }
 
 /**
- * Compile all user rules into DNR rules
+ * Compile all user rules into DNR rules.
+ * The CORS bypass is not a user rule — see core/cors-bypass.js.
  * @param {Array} userRules - All rules from storage
- * @param {Object} settings - User settings including allowCorsBypass
  * @returns {Array} Compiled DNR rules
  */
-export function compileAllRules(userRules, settings = {}) {
+export function compileAllRules(userRules) {
     const dnrRules = [];
     let ruleId = RULE_ID_BASE;
 
@@ -191,36 +202,6 @@ export function compileAllRules(userRules, settings = {}) {
             activeRuleMap.set(ruleId, rule);
             ruleId++;
         }
-    }
-
-    if (settings.allowCorsBypass) {
-        dnrRules.push({
-            id: ruleId++,
-            priority: 1,
-            action: {
-                type: 'modifyHeaders',
-                responseHeaders: [
-                    { header: 'Access-Control-Allow-Origin', operation: 'set', value: '*' },
-                    { header: 'Access-Control-Allow-Methods', operation: 'set', value: '*' },
-                    { header: 'Access-Control-Allow-Headers', operation: 'set', value: '*' }
-                ]
-            },
-            condition: {
-                urlFilter: '*',
-                resourceTypes: ['xmlhttprequest', 'other'],
-                // Protect Google Workspace domains that use credentialed requests.
-                // ACAO:* is invalid when credentials:'include' is used — the browser
-                // requires the exact origin, not a wildcard. Excluding these domains
-                // prevents Nariya from breaking Google Chat, Gmail, Docs, etc.
-                // This does NOT affect localhost or any other dev/staging server.
-                excludedRequestDomains: [
-                    'google.com', 'googleapis.com', 'gstatic.com',
-                    'googleusercontent.com', 'youtube.com', 'googlevideo.com',
-                    'google-analytics.com', 'googletagmanager.com',
-                    'doubleclick.net', 'firebaseio.com', 'firebaseapp.com'
-                ]
-            }
-        });
     }
 
     return dnrRules;
@@ -248,10 +229,10 @@ export async function applyRules(dnrRules) {
     const existingSession = await chrome.declarativeNetRequest.getSessionRules();
 
     const dynamicRemoveIds = existingDynamic
-        .filter(r => r.id >= RULE_ID_BASE)
+        .filter(r => isUserRuleId(r.id))
         .map(r => r.id);
     const sessionRemoveIds = existingSession
-        .filter(r => r.id >= RULE_ID_BASE)
+        .filter(r => isUserRuleId(r.id))
         .map(r => r.id);
 
     // Apply dynamic rules
@@ -279,10 +260,10 @@ export async function clearAllDnrRules() {
     const existingSession = await chrome.declarativeNetRequest.getSessionRules();
 
     const dynamicRemoveIds = existingDynamic
-        .filter(r => r.id >= RULE_ID_BASE)
+        .filter(r => isUserRuleId(r.id))
         .map(r => r.id);
     const sessionRemoveIds = existingSession
-        .filter(r => r.id >= RULE_ID_BASE)
+        .filter(r => isUserRuleId(r.id))
         .map(r => r.id);
 
     if (dynamicRemoveIds.length > 0) {

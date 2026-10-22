@@ -103,6 +103,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // ─── Global State & Settings ───
 const corsToggle = document.getElementById('corsToggle');
+const corsSitesInput = document.getElementById('corsSitesInput');
+const corsHeadersInput = document.getElementById('corsHeadersInput');
+const saveCorsSettingsBtn = document.getElementById('saveCorsSettingsBtn');
 const cloudSyncToggle = document.getElementById('cloudSyncToggle');
 
 async function loadSettings() {
@@ -110,6 +113,8 @@ async function loadSettings() {
     if (res.ok && res.data) {
         globalToggle.checked = res.data.globalEnabled;
         if (corsToggle) corsToggle.checked = res.data.allowCorsBypass !== false;
+        if (corsSitesInput) corsSitesInput.value = (res.data.corsBypassSites || []).join('\n');
+        if (corsHeadersInput) corsHeadersInput.value = (res.data.corsAllowHeaders || []).join(', ');
         if (cloudSyncToggle) cloudSyncToggle.checked = res.data.enableCloudSync === true;
         if (res.data.theme === 'light') {
             document.body.classList.add('light-theme');
@@ -151,6 +156,17 @@ if (globalToggle) {
 if (corsToggle) {
     corsToggle.addEventListener('change', async () => {
         await sendMessage('UPDATE_SETTINGS', { allowCorsBypass: corsToggle.checked });
+    });
+}
+
+if (saveCorsSettingsBtn) {
+    saveCorsSettingsBtn.addEventListener('click', async () => {
+        const toList = (text) => text.split(/[\s,]+/).map(v => v.trim()).filter(Boolean);
+        const res = await sendMessage('UPDATE_SETTINGS', {
+            corsBypassSites: toList(corsSitesInput.value),
+            corsAllowHeaders: toList(corsHeadersInput.value)
+        });
+        showToast(res.ok ? 'CORS settings saved' : 'Failed to save CORS settings', res.ok ? 'success' : 'error');
     });
 }
 

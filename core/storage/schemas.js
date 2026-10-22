@@ -18,5 +18,7 @@ export const SETTINGS_SCHEMA = {
     maxRepeaterHistory: 'number',
     theme: 'string',
     allowCorsBypass: 'boolean',
+    corsBypassSites: 'array',
+    corsAllowHeaders: 'array',
     enableCloudSync: 'boolean'
 };

@@ -35,12 +35,12 @@ async function loadSettings() {
 }
 
 globalToggle.addEventListener('change', async () => {
-    await sendMessage('UPDATE_SETTINGS', { updates: { globalEnabled: globalToggle.checked } });
+    await sendMessage('UPDATE_SETTINGS', { globalEnabled: globalToggle.checked });
 });
 
 if (corsToggle) {
     corsToggle.addEventListener('change', async () => {
-        await sendMessage('UPDATE_SETTINGS', { updates: { allowCorsBypass: corsToggle.checked } });
+        await sendMessage('UPDATE_SETTINGS', { allowCorsBypass: corsToggle.checked });
     });
 }
 
