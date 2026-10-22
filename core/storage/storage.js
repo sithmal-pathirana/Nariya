@@ -4,6 +4,7 @@
  */
 
 import { sanitizeRule, sanitizeImportedRules } from './sanitizer.js';
+import { mirrorRules } from './mirror.js';
 
 const STORAGE_KEY = 'nariya_rules';
 const SETTINGS_KEY = 'nariya_settings';
@@ -25,6 +26,9 @@ const DEFAULT_SETTINGS = {
   interceptorSites: [],
   // Nariya Cloud backend (auth, rule sync, cloud mocks)
   backendUrl: 'http://localhost:8080',
+  // Where nariya_rules.json is mirrored: browser (none) | native | gdrive
+  storageEngine: 'browser',
+  gdriveFileId: null,
   interceptorAutoMutate: false,
   interceptorAutoMutateScript: '',
   enableCloudSync: false
@@ -73,7 +77,7 @@ export async function saveRule(rawRule) {
   }
 
   await chrome.storage.local.set({ [STORAGE_KEY]: rules });
-  syncToCloud(rules);
+  syncRemotes(rules);
   return rule;
 }
 
@@ -89,7 +93,7 @@ export async function deleteRule(id) {
   if (filtered.length === rules.length) return false;
 
   await chrome.storage.local.set({ [STORAGE_KEY]: filtered });
-  syncToCloud(filtered);
+  syncRemotes(filtered);
   return true;
 }
 
@@ -109,7 +113,7 @@ export async function toggleRule(id, enabled) {
   rule.updatedAt = Date.now();
 
   await chrome.storage.local.set({ [STORAGE_KEY]: rules });
-  syncToCloud(rules);
+  syncRemotes(rules);
   return rule;
 }
 
@@ -155,7 +159,7 @@ export async function importRules(importedRules) {
   }
 
   await chrome.storage.local.set({ [STORAGE_KEY]: existing });
-  syncToCloud(existing);
+  syncRemotes(existing);
   return count;
 }
 
@@ -174,7 +178,7 @@ export async function exportRules() {
  */
 export async function clearAllRules() {
   await chrome.storage.local.set({ [STORAGE_KEY]: [] });
-  syncToCloud([]);
+  syncRemotes([]);
 }
 
 /**
@@ -196,6 +200,16 @@ export async function updateSettings(updates) {
   const merged = { ...current, ...updates };
   await chrome.storage.local.set({ [SETTINGS_KEY]: merged });
   return merged;
+}
+
+/**
+ * Push rule changes everywhere they are kept besides chrome.storage:
+ * the Nariya Cloud backend, or the rules file (folder / Google Drive)
+ * @param {Array} rules
+ */
+function syncRemotes(rules) {
+  syncToCloud(rules);
+  getSettings().then(settings => mirrorRules(rules, settings)).catch(() => { });
 }
 
 /**

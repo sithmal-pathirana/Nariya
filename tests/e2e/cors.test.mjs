@@ -60,15 +60,15 @@ test('site not in the list is not bypassed until added', async () => {
     await page.close();
 });
 
-test('two dev servers on the same host each get their own origin', async () => {
+test('two dev servers on the same host each get their own origin', async (t) => {
     const app2 = await startAppServer();
+    t.after(() => app2.server.close());
     const a = await ext.open(DEV);
     const b = await ext.open(`http://localhost:${app2.port}`);
     assert.equal(await a.evaluate(fetchExpr(API + '/a', { credentials: 'include' })), '200');
     assert.equal(await b.evaluate(fetchExpr(API + '/a', { credentials: 'include' })), '200');
     await a.close();
     await b.close();
-    app2.server.close();
 });
 
 test('unknown custom header is learned after the first preflight', async () => {

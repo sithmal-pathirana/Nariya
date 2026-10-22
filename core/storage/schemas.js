@@ -23,5 +23,7 @@ export const SETTINGS_SCHEMA = {
     corsAllowHeaders: 'array',
     interceptorSites: 'array',
     backendUrl: 'string',
+    storageEngine: 'string',
+    gdriveFileId: 'string',
     enableCloudSync: 'boolean'
 };

@@ -1,6 +1,6 @@
 // auth.js - Handles Google OAuth2 Login & Profile state
 
-import { emitState, subscribeState } from '../../shared/state.js';
+import { emitState } from '../../shared/state.js';
 import { showToast } from '../../shared/utils.js';
 import { sendMessage } from '../../shared/messaging.js';
 

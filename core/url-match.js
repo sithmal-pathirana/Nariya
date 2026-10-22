@@ -92,3 +92,21 @@ export function dnrRuleMatches(dnrRule, details) {
     }
     return dnrUrlFilterToRegExp(c.urlFilter).test(details.url);
 }
+
+/**
+ * Which of these compiled rules would Chrome apply to the request?
+ * A matching redirect (highest priority wins) replaces the request, so
+ * header rules do not run on it; otherwise every matching modifyHeaders
+ * rule applies.
+ * @param {Array} dnrRules
+ * @param {Object} details - webRequest details
+ * @returns {Array} applied rules
+ */
+export function pickAppliedRules(dnrRules, details) {
+    const matched = dnrRules.filter(rule => dnrRuleMatches(rule, details));
+    const redirects = matched.filter(r => r.action.type === 'redirect');
+    if (redirects.length > 0) {
+        return [redirects.reduce((best, r) => (r.priority > best.priority ? r : best))];
+    }
+    return matched.filter(r => r.action.type === 'modifyHeaders');
+}

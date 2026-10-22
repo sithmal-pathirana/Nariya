@@ -311,6 +311,11 @@
                                         Drive</button>
                                 </label>
                             </div>
+                            <div class="mirror-status" id="mirrorStatusRow" hidden>
+                                <span id="mirrorStatus"></span>
+                                <button class="btn btn-ghost" id="regrantFolderBtn" hidden>Grant folder access</button>
+                                <button class="btn btn-ghost" id="mirrorNowBtn">Sync now</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1064,6 +1069,43 @@
             <div class="modal-footer">
                 <button class="btn btn-ghost" id="cancelRuleBtn">Cancel</button>
                 <button class="btn btn-primary" id="saveRuleBtn">Save Rule</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rule Templates Modal -->
+    <div class="modal-overlay" id="templatesModal" style="display:none;">
+        <div class="modal" style="max-width: 640px;">
+            <div class="modal-header">
+                <h2>Rule Templates</h2>
+                <button class="btn-close" id="closeTemplatesModalBtn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="template-grid">
+                    <button class="template-card" data-template="cors">
+                        <span class="rule-type-badge badge-header">cors</span>
+                        <strong>Bypass CORS for my dev site</strong>
+                        <span>Turns on the built-in CORS bypass (exact origin, cookies, preflights).</span>
+                    </button>
+                    <button class="template-card" data-template="proxy">
+                        <span class="rule-type-badge badge-proxy">proxy</span>
+                        <strong>Send API calls via Nariya</strong>
+                        <span>For APIs that reject preflights (OPTIONS → 401/404/405).</span>
+                    </button>
+                    <button class="template-card" data-template="mock500">
+                        <span class="rule-type-badge badge-mock">mock</span>
+                        <strong>Simulate 500 Server Error</strong>
+                        <span>Return an error JSON for <code>/api/*</code> calls.</span>
+                    </button>
+                    <button class="template-card" data-template="delayAPI">
+                        <span class="rule-type-badge badge-delay">delay</span>
+                        <strong>Heavy Network Delay (3s)</strong>
+                        <span>Slow down <code>/api/*</code> calls to test loading states.</span>
+                    </button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" id="cancelTemplatesBtn">Close</button>
             </div>
         </div>
     </div>

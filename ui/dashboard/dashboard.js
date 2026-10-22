@@ -2,7 +2,7 @@
 
 import { sendMessage } from '../shared/messaging.js';
 import { showToast, escapeHtml } from '../shared/utils.js';
-import { initRulesTab, loadRules, getAllRules } from './tabs/rules-tab.js';
+import { initRulesTab, loadRules } from './tabs/rules-tab.js';
 import { initInterceptorTab, refreshInterceptorUI } from './tabs/interceptor-tab.js';
 import { initRepeaterTab, loadRepeaterHistory } from './tabs/repeater-tab.js';
 import { initComparerTab } from './tabs/comparer-tab.js';
@@ -12,6 +12,7 @@ import { initRecorderTab, loadRecorder, refreshRecorderTabs } from './tabs/recor
 import { initAuth } from './components/auth.js';
 import { initCorsPanel, loadCorsStatus } from './components/cors-panel.js';
 import { matchesUrl, dnrUrlFilterToRegExp } from '../../core/url-match.js';
+import { saveDirectoryHandle, getDirectoryHandle, readRulesFromDirectory, readDriveRules } from '../../core/storage/mirror.js';
 
 // ─── DOM Elements ───
 const navButtons = document.querySelectorAll('.nav-item');
@@ -59,7 +60,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (btn.dataset.tab === 'repeater') loadRepeaterHistory();
                 if (btn.dataset.tab === 'analyzer') loadAnalyzerIssues();
                 if (btn.dataset.tab === 'logs') loadExecutionLogs();
-                if (btn.dataset.tab === 'settings') loadCorsStatus();
+                if (btn.dataset.tab === 'settings') { loadCorsStatus(); refreshMirrorStatus(); }
                 if (btn.dataset.tab === 'recorder') { refreshRecorderTabs(); loadRecorder(); }
             }
         });
@@ -214,27 +215,96 @@ if (cloudSyncToggle) {
     });
 }
 
+// ─── Storage provider: mirror rules to a folder or Google Drive ───
 const storageRadios = document.querySelectorAll('input[name="storageEngine"]');
+const mirrorStatusRow = document.getElementById('mirrorStatusRow');
+const mirrorStatusEl = document.getElementById('mirrorStatus');
+const regrantFolderBtn = document.getElementById('regrantFolderBtn');
+
+async function refreshMirrorStatus() {
+    if (!mirrorStatusRow) return;
+    const { data: settings } = await sendMessage('GET_SETTINGS');
+    const engine = settings?.storageEngine || 'browser';
+    mirrorStatusRow.hidden = settings?.enableCloudSync || (engine !== 'native' && engine !== 'gdrive');
+    if (mirrorStatusRow.hidden) return;
+
+    const { data: status } = await sendMessage('MIRROR_STATUS');
+    mirrorStatusEl.replaceChildren();
+    const span = document.createElement('span');
+    if (!status || status.engine !== engine) {
+        span.textContent = `Not synced yet — ${engine === 'native' ? 'select a folder' : 'connect Google Drive'}.`;
+    } else if (status.ok) {
+        span.className = 'ok';
+        span.textContent = `✓ ${status.count} rule(s) saved to nariya_rules.json at ${new Date(status.at).toLocaleTimeString()}`;
+    } else {
+        span.className = 'err';
+        span.textContent = `✗ ${status.error}`;
+    }
+    mirrorStatusEl.appendChild(span);
+    regrantFolderBtn.hidden = !(status && !status.ok && status.needsPermission);
+}
+
+/**
+ * Offer to merge rules found in an existing nariya_rules.json, then write
+ */
+async function adoptExistingRules(found, where) {
+    if (found?.length && confirm(`${where} already has nariya_rules.json with ${found.length} rule(s). Import them? (Rules you have now are kept.)`)) {
+        const res = await sendMessage('IMPORT_RULES', { rules: found });
+        if (res.ok) showToast(`Imported ${res.data.imported} rule(s)`, 'success');
+        await loadRules();
+    }
+    await sendMessage('MIRROR_NOW');
+    await refreshMirrorStatus();
+}
+
 storageRadios.forEach(radio => {
     radio.addEventListener('change', async (e) => {
         const engine = e.target.value;
         document.getElementById('selectNativeDirBtn').style.display = engine === 'native' ? 'inline-block' : 'none';
         document.getElementById('gdriveAuthBtn').style.display = engine === 'gdrive' ? 'inline-block' : 'none';
         await sendMessage('UPDATE_SETTINGS', { storageEngine: engine });
+        await refreshMirrorStatus();
     });
 });
 
 document.getElementById('selectNativeDirBtn')?.addEventListener('click', async () => {
+    let dir;
     try {
-        const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
-        showToast('Directory acquired! Nariya will attempt to sync `nariya_rules.json` here.', 'success');
-    } catch (err) {
-        console.error('User aborted directory picker.');
+        dir = await window.showDirectoryPicker({ mode: 'readwrite', id: 'nariya-rules' });
+    } catch {
+        return; // picker dismissed
     }
+    try {
+        await saveDirectoryHandle(dir);
+        await sendMessage('UPDATE_SETTINGS', { storageEngine: 'native' });
+        showToast(`Rules will be kept in ${dir.name}/nariya_rules.json`, 'success');
+        await adoptExistingRules(await readRulesFromDirectory(dir), `“${dir.name}”`);
+    } catch (err) {
+        showToast('Could not use that folder: ' + err.message, 'error');
+    }
+});
+
+regrantFolderBtn?.addEventListener('click', async () => {
+    const dir = await getDirectoryHandle();
+    if (!dir) return;
+    if ((await dir.requestPermission({ mode: 'readwrite' })) === 'granted') {
+        await sendMessage('MIRROR_NOW');
+    }
+    await refreshMirrorStatus();
+});
+
+document.getElementById('mirrorNowBtn')?.addEventListener('click', async () => {
+    await sendMessage('MIRROR_NOW');
+    await refreshMirrorStatus();
 });
 
 document.getElementById('gdriveAuthBtn')?.addEventListener('click', async () => {
     const btn = document.getElementById('gdriveAuthBtn');
+    if (!(chrome.runtime.getManifest().oauth2?.client_id || '').endsWith('.apps.googleusercontent.com') ||
+        chrome.runtime.getManifest().oauth2.client_id.startsWith('YOUR_')) {
+        showToast('Google Drive needs oauth2.client_id in manifest.json (see README).', 'error');
+        return;
+    }
     try {
         btn.textContent = 'Connecting...';
         btn.disabled = true;
@@ -244,22 +314,24 @@ document.getElementById('gdriveAuthBtn')?.addEventListener('click', async () => 
             chrome.identity.getAuthToken({ interactive: true }, (tok) => {
                 if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
                 if (!tok) return reject(new Error('No token received'));
-                resolve(tok);
+                resolve(typeof tok === 'string' ? tok : tok.token);
             });
         });
 
-        // Verify access by searching for existing nariya_rules.json
+        // Reuse an existing nariya_rules.json created by Nariya, or create one
         const searchRes = await fetch(
-            `https://www.googleapis.com/drive/v3/files?q=name='nariya_rules.json'+and+trashed=false&fields=files(id,name)`,
+            `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent("name='nariya_rules.json' and trashed=false")}&fields=files(id,name)`,
             { headers: { Authorization: `Bearer ${token}` } }
         );
         const searchData = await searchRes.json();
+        if (!searchRes.ok) throw new Error(searchData.error?.message || `HTTP ${searchRes.status}`);
 
         let fileId;
+        let existing = null;
         if (searchData.files && searchData.files.length > 0) {
             fileId = searchData.files[0].id;
+            existing = await readDriveRules(fileId, token);
         } else {
-            // Create the file if it doesn't exist
             const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
                 method: 'POST',
                 headers: {
@@ -269,17 +341,19 @@ document.getElementById('gdriveAuthBtn')?.addEventListener('click', async () => 
                 body: JSON.stringify({ name: 'nariya_rules.json', mimeType: 'application/json' })
             });
             const createData = await createRes.json();
+            if (!createRes.ok) throw new Error(createData.error?.message || `HTTP ${createRes.status}`);
             fileId = createData.id;
         }
 
         await sendMessage('UPDATE_SETTINGS', { storageEngine: 'gdrive', gdriveFileId: fileId });
         btn.textContent = '✓ Connected';
-        btn.style.background = '#10b981';
-        showToast(`Google Drive connected! File ID: ${fileId}\nNariya will sync rules to nariya_rules.json in your Drive.`, 'success');
+        showToast('Google Drive connected. Rules are kept in nariya_rules.json in your Drive.', 'success');
+        await adoptExistingRules(existing, 'Your Google Drive');
     } catch (err) {
         console.error('Google Drive auth failed:', err);
         showToast('Failed to connect Google Drive: ' + (err.message || err), 'error');
         btn.textContent = 'Connect Drive';
+    } finally {
         btn.disabled = false;
     }
 });
@@ -586,7 +660,7 @@ function setupModals() {
                                 testUrlRedirectResult.textContent = `Redirects to: ${newUrl}`;
                                 testUrlRedirectResult.style.display = 'block';
                             }
-                        } catch(e) {}
+                        } catch { /* invalid pattern */ }
                     }
                 } else {
                      testUrlRedirectResult.style.display = 'none';
@@ -633,13 +707,13 @@ function setupModals() {
     if (formatMockJsonBtn && mockBody) {
         formatMockJsonBtn.addEventListener('click', () => {
             try { mockBody.value = JSON.stringify(JSON.parse(mockBody.value), null, 2); updateMockBodySize(); }
-            catch(e) { showToast('Invalid JSON', 'error'); }
+            catch { showToast('Invalid JSON', 'error'); }
         });
     }
     if (minifyMockJsonBtn && mockBody) {
         minifyMockJsonBtn.addEventListener('click', () => {
             try { mockBody.value = JSON.stringify(JSON.parse(mockBody.value)); updateMockBodySize(); }
-            catch(e) { showToast('Invalid JSON', 'error'); }
+            catch { showToast('Invalid JSON', 'error'); }
         });
     }
 

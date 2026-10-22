@@ -10,15 +10,18 @@ export const EXTENSION_DIR = path.resolve(path.dirname(fileURLToPath(import.meta
 
 export const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-export async function launchExtension() {
+/**
+ * @param {{ dir?: string }} options - extension directory (default: the repo)
+ */
+export async function launchExtension({ dir = EXTENSION_DIR } = {}) {
     const context = await chromium.launchPersistentContext('', {
         headless: true,
         // Full Chromium: the headless shell cannot load extensions
         channel: 'chromium',
         executablePath: process.env.NARIYA_CHROMIUM || undefined,
         args: [
-            `--disable-extensions-except=${EXTENSION_DIR}`,
-            `--load-extension=${EXTENSION_DIR}`,
+            `--disable-extensions-except=${dir}`,
+            `--load-extension=${dir}`,
             '--host-resolver-rules=MAP *.test 127.0.0.1'
         ]
     });

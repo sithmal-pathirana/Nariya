@@ -48,22 +48,6 @@ function toUrlFilter(pattern) {
 }
 
 /**
- * Parse header modification string "Name: Value" or just "Name"
- * @param {string} str
- * @returns {{ header: string, value?: string }}
- */
-function parseHeader(str) {
-    const colonIdx = str.indexOf(':');
-    if (colonIdx === -1) {
-        return { header: str.trim() };
-    }
-    return {
-        header: str.slice(0, colonIdx).trim(),
-        value: str.slice(colonIdx + 1).trim()
-    };
-}
-
-/**
  * Compile a single user rule into a declarativeNetRequest rule
  * @param {Object} rule - User rule from storage
  * @param {number} ruleId - Numeric rule ID for DNR
@@ -97,11 +81,7 @@ function compileRule(rule, ruleId) {
                 // If the user used simple wildcards, convert them
                 if (!matchPattern.includes('(') && matchPattern.includes('*')) {
                     // Replace each * with a numbered capture group
-                    let groupIdx = 0;
-                    matchPattern = matchPattern.replace(/\*/g, () => {
-                        groupIdx++;
-                        return '(.*)';
-                    });
+                    matchPattern = matchPattern.replace(/\*/g, '(.*)');
                     // Also convert * in replace pattern to back-references
                     let refIdx = 0;
                     replacePattern = replacePattern.replace(/\*/g, () => {

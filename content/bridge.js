@@ -81,20 +81,20 @@
                 toServiceWorker(data.type, data.payload);
                 break;
 
+            case 'PROXY_START':
+                startProxy(data.id, data.payload);
+                break;
+
+            case 'PROXY_ABORT': {
+                const proxyPort = proxyPorts.get(data.id);
+                proxyPorts.delete(data.id);
+                if (proxyPort) proxyPort.disconnect();
+                break;
+            }
+
             case 'CALL': {
                 let result;
-                if (data.call === 'PROXY_FETCH') {
-                    const req = { ...data.payload };
-                    if (req.body) req.bodyBase64 = bufferToBase64(req.body);
-                    delete req.body;
-                    result = await toServiceWorker('PROXY_FETCH', req);
-                    if (result?.ok && result.response) {
-                        const body = base64ToBuffer(result.response.bodyBase64);
-                        result.response = { ...result.response, body, bodyBase64: undefined };
-                        port.postMessage({ type: 'RESULT', id: data.id, result }, [body]);
-                        return;
-                    }
-                } else if (data.call === 'RESOLVE_MOCK_BODY') {
+                if (data.call === 'RESOLVE_MOCK_BODY') {
                     result = await toServiceWorker('RESOLVE_MOCK_BODY', data.payload);
                 } else {
                     result = { ok: false, error: `Unknown call ${data.call}` };
@@ -103,6 +103,54 @@
                 break;
             }
         }
+    }
+
+    // ─── Proxied requests (streamed over a runtime port) ────────────
+
+    const proxyPorts = new Map();
+
+    function startProxy(id, req) {
+        const toPage = (event, extra = {}, transfer = []) =>
+            port?.postMessage({ type: 'PROXY_EVENT', id, event, ...extra }, transfer);
+
+        let proxyPort;
+        try {
+            proxyPort = chrome.runtime.connect({ name: 'nariya-proxy' });
+        } catch {
+            toPage('error', { error: 'Extension unavailable (reload the page)' });
+            return;
+        }
+        proxyPorts.set(id, proxyPort);
+        let ended = false;
+
+        proxyPort.onMessage.addListener((msg) => {
+            switch (msg.type) {
+                case 'head':
+                    toPage('head', { head: msg.head });
+                    break;
+                case 'chunk': {
+                    const data = base64ToBuffer(msg.data);
+                    toPage('chunk', { data }, [data]);
+                    break;
+                }
+                case 'end':
+                case 'error':
+                    ended = true;
+                    proxyPorts.delete(id);
+                    toPage(msg.type, { error: msg.error });
+                    break;
+            }
+        });
+        proxyPort.onDisconnect.addListener(() => {
+            if (ended || !proxyPorts.has(id)) return;
+            proxyPorts.delete(id);
+            toPage('error', { error: 'Connection to Nariya closed' });
+        });
+
+        const request = { ...req };
+        if (request.body) request.bodyBase64 = bufferToBase64(request.body);
+        delete request.body;
+        proxyPort.postMessage({ type: 'start', request });
     }
 
     // Fetch initial state from service worker

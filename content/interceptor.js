@@ -71,6 +71,11 @@
             case 'RECORDING':
                 recording = !!data.enabled;
                 break;
+            case 'PROXY_EVENT': {
+                const stream = proxyStreams.get(data.id);
+                if (stream) stream.onEvent(data);
+                break;
+            }
             case 'RESULT': {
                 const pending = pendingCalls.get(data.id);
                 if (pending) {
@@ -211,11 +216,15 @@
         };
     }
 
+    const NULL_BODY_STATUSES = [101, 103, 204, 205, 304];
+
     /**
-     * Turn a synthetic response into a real Response object
+     * Turn a synthetic response into a real Response object.
+     * `res.body` may be bytes or a ReadableStream.
      */
     function toFetchResponse(res) {
-        const nullBody = [101, 103, 204, 205, 304].includes(res.status);
+        const nullBody = NULL_BODY_STATUSES.includes(res.status);
+        if (nullBody && res.body instanceof ReadableStream) res.body.cancel().catch(() => { });
         const status = res.status >= 200 && res.status <= 599 ? res.status : 200;
         const response = new NativeResponse(nullBody ? null : res.body, {
             status,
@@ -227,26 +236,72 @@
         return response;
     }
 
+    const proxyStreams = new Map();
+
     /**
-     * Send a request through the extension's service worker (no CORS there)
+     * Send a request through the extension's service worker (no CORS there).
+     * Resolves as soon as response headers arrive; the body streams in.
      * @param {{ url, method, headers, body: ArrayBuffer|null, credentials }} req
+     * @param {AbortSignal} [signal]
+     * @returns {Promise<{ status, statusText, headers, url, redirected, body: ReadableStream }>}
      */
-    async function proxyThroughExtension(req) {
-        const transfer = req.body ? [req.body] : [];
-        const result = await callExtension('PROXY_FETCH', req, transfer);
-        if (!result.ok) {
-            console.warn(`[Nariya] Proxy request failed for ${req.url}: ${result.error}`);
-            throw new TypeError('Failed to fetch');
-        }
-        const r = result.response;
-        return {
-            status: r.status,
-            statusText: r.statusText,
-            headers: r.headers,
-            body: r.body instanceof ArrayBuffer ? new Uint8Array(r.body) : base64ToBytes(r.bodyBase64),
-            url: r.url,
-            redirected: r.redirected
-        };
+    function proxyThroughExtension(req, signal) {
+        if (!port) return Promise.reject(new TypeError('Failed to fetch'));
+        if (signal?.aborted) return Promise.reject(abortError());
+
+        const id = ++callSeq;
+        return new Promise((resolve, reject) => {
+            let controller;
+            let settled = false;
+            const body = new ReadableStream({
+                start(c) { controller = c; },
+                cancel() {
+                    if (!proxyStreams.has(id)) return;
+                    proxyStreams.delete(id);
+                    port.postMessage({ type: 'PROXY_ABORT', id });
+                }
+            });
+
+            const fail = (err) => {
+                proxyStreams.delete(id);
+                if (!settled) { settled = true; reject(err); }
+                try { controller.error(err); } catch { }
+            };
+
+            proxyStreams.set(id, {
+                onEvent(ev) {
+                    switch (ev.event) {
+                        case 'head':
+                            settled = true;
+                            resolve({ ...ev.head, body });
+                            break;
+                        case 'chunk':
+                            try { controller.enqueue(new Uint8Array(ev.data)); } catch { }
+                            break;
+                        case 'end':
+                            proxyStreams.delete(id);
+                            try { controller.close(); } catch { }
+                            break;
+                        case 'error':
+                            console.warn(`[Nariya] Proxy request failed for ${req.url}: ${ev.error}`);
+                            fail(new TypeError('Failed to fetch'));
+                            break;
+                    }
+                }
+            });
+
+            signal?.addEventListener('abort', () => {
+                if (!proxyStreams.has(id)) return;
+                port.postMessage({ type: 'PROXY_ABORT', id });
+                fail(abortError());
+            }, { once: true });
+
+            port.postMessage({ type: 'PROXY_START', id, payload: req }, req.body ? [req.body] : []);
+        });
+    }
+
+    async function readAll(stream) {
+        return new Uint8Array(await new NativeResponse(stream).arrayBuffer());
     }
 
     function credentialsFor(url, mode) {
@@ -320,11 +375,17 @@
                 headers: [...req.headers],
                 body: body && body.byteLength > 0 ? body : null,
                 credentials: credentialsFor(req.url, req.credentials)
-            });
-            if (signal?.aborted) throw abortError();
+            }, signal);
             report('REQUEST_INTERCEPTED', { type: 'proxy', url, method, ruleId: proxyRule.id, status: res.status });
+
             const contentType = headerValue(res.headers, 'content-type');
-            if (isTextual(contentType)) recordBody(url, method, res.status, contentType, textDecoder.decode(res.body));
+            if (recording && isTextual(contentType)) {
+                const [forPage, forRecorder] = res.body.tee();
+                res.body = forPage;
+                readAll(forRecorder)
+                    .then(bytes => recordBody(url, method, res.status, contentType, textDecoder.decode(bytes)))
+                    .catch(() => { });
+            }
             return toFetchResponse(res);
         }
 
@@ -370,77 +431,138 @@
     }
 
     /**
-     * Make an XHR look like it received `res`, honouring responseType and
-     * firing the usual readystatechange / progress / load / loadend events.
+     * Make an XHR look like it is receiving `head`, honouring responseType and
+     * firing readystatechange / progress / load / loadend like the real thing.
+     * Feed the body with chunk(), then call end() (or fail()).
      */
-    function fulfillXhr(xhr, res) {
+    function beginXhrResponse(xhr, head) {
         const st = stateOf(xhr);
-        const bytes = res.body || new Uint8Array(0);
-        const text = textDecoder.decode(bytes);
-        const contentType = headerValue(res.headers, 'content-type') || '';
         const fake = { readyState: 1, status: 0, statusText: '' };
         st.fake = fake;
 
-        let response;
-        switch (xhr.responseType) {
-            case 'json':
-                try { response = JSON.parse(text); } catch { response = null; }
-                break;
-            case 'arraybuffer':
-                response = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-                break;
-            case 'blob':
-                response = new Blob([bytes], { type: contentType });
-                break;
-            case 'document':
-                response = new DOMParser().parseFromString(text, /xml/i.test(contentType) ? 'application/xml' : 'text/html');
-                break;
-            default:
-                response = text;
-        }
+        const contentType = headerValue(head.headers, 'content-type') || '';
+        const total = parseInt(headerValue(head.headers, 'content-length'), 10) || 0;
+        const chunks = [];
+        let loaded = 0;
+        let textCache = null;
+        let finalResponse = null;
+        let done = false;
+
+        const bytesSoFar = () => {
+            const all = new Uint8Array(loaded);
+            let offset = 0;
+            for (const c of chunks) { all.set(c, offset); offset += c.byteLength; }
+            return all;
+        };
+        const text = () => {
+            if (textCache === null || textCache.loaded !== loaded) {
+                textCache = { loaded, value: textDecoder.decode(bytesSoFar()) };
+            }
+            return textCache.value;
+        };
+        const isTextType = () => xhr.responseType === '' || xhr.responseType === 'text';
 
         const define = (prop, get) => Object.defineProperty(xhr, prop, { configurable: true, get });
         define('readyState', () => fake.readyState);
         define('status', () => fake.status);
         define('statusText', () => fake.statusText);
-        define('responseURL', () => (fake.readyState >= 2 ? res.url || '' : ''));
-        define('responseText', () => (fake.readyState >= 3 ? text : ''));
-        define('response', () => (fake.readyState === 4 ? response : (xhr.responseType === '' || xhr.responseType === 'text') && fake.readyState === 3 ? text : null));
-        define('responseXML', () => (fake.readyState === 4 && xhr.responseType === 'document' ? response : null));
+        define('responseURL', () => (fake.readyState >= 2 ? head.url || '' : ''));
+        define('responseText', () => (fake.readyState >= 3 ? text() : ''));
+        define('response', () => {
+            if (done) return finalResponse;
+            return isTextType() ? (fake.readyState === 3 ? text() : '') : null;
+        });
+        define('responseXML', () => (done && xhr.responseType === 'document' ? finalResponse : null));
         Object.defineProperty(xhr, 'getResponseHeader', {
             configurable: true,
-            value: (name) => (fake.readyState >= 2 ? headerValue(res.headers, String(name)) : null)
+            value: (name) => (fake.readyState >= 2 ? headerValue(head.headers, String(name)) : null)
         });
         Object.defineProperty(xhr, 'getAllResponseHeaders', {
             configurable: true,
             value: () => (fake.readyState >= 2
-                ? res.headers.map(([k, v]) => `${k.toLowerCase()}: ${v}\r\n`).join('')
+                ? head.headers.map(([k, v]) => `${k.toLowerCase()}: ${v}\r\n`).join('')
                 : '')
         });
 
-        const total = bytes.byteLength;
         fake.readyState = 2;
-        fake.status = res.status;
-        fake.statusText = res.statusText || '';
+        fake.status = head.status;
+        fake.statusText = head.statusText || '';
         fire(xhr, 'readystatechange');
-        if (st.aborted) return;
-        fake.readyState = 3;
-        fire(xhr, 'readystatechange');
-        fire(xhr, 'progress', total, total);
-        fake.readyState = 4;
-        fire(xhr, 'readystatechange');
-        fire(xhr, 'load', total, total);
-        fire(xhr, 'loadend', total, total);
+
+        return {
+            chunk(bytes) {
+                if (st.aborted || done || !bytes.byteLength) return;
+                chunks.push(bytes);
+                loaded += bytes.byteLength;
+                fake.readyState = 3;
+                fire(xhr, 'readystatechange');
+                fire(xhr, 'progress', loaded, total || loaded);
+            },
+            end() {
+                if (st.aborted || done) return;
+                const all = bytesSoFar();
+                switch (xhr.responseType) {
+                    case 'json':
+                        try { finalResponse = JSON.parse(text()); } catch { finalResponse = null; }
+                        break;
+                    case 'arraybuffer':
+                        finalResponse = all.buffer;
+                        break;
+                    case 'blob':
+                        finalResponse = new Blob([all], { type: contentType });
+                        break;
+                    case 'document':
+                        finalResponse = new DOMParser().parseFromString(text(), /xml/i.test(contentType) ? 'application/xml' : 'text/html');
+                        break;
+                    default:
+                        finalResponse = text();
+                }
+                done = true;
+                st.pending = false;
+                fake.readyState = 4;
+                fire(xhr, 'readystatechange');
+                fire(xhr, 'load', loaded, total || loaded);
+                fire(xhr, 'loadend', loaded, total || loaded);
+            },
+            text,
+            fail() {
+                if (st.aborted || done) return;
+                done = true;
+                failXhr(xhr);
+            }
+        };
+    }
+
+    /**
+     * Deliver a complete synthetic response (mocks)
+     */
+    function fulfillXhr(xhr, res) {
+        const response = beginXhrResponse(xhr, res);
+        if (stateOf(xhr).aborted) return;
+        response.chunk(res.body || new Uint8Array(0));
+        response.end();
     }
 
     function failXhr(xhr) {
         const st = stateOf(xhr);
+        st.pending = false;
         st.fake = { readyState: 4, status: 0, statusText: '' };
         Object.defineProperty(xhr, 'readyState', { configurable: true, get: () => st.fake.readyState });
         Object.defineProperty(xhr, 'status', { configurable: true, get: () => 0 });
         fire(xhr, 'readystatechange');
         fire(xhr, 'error');
         fire(xhr, 'loadend');
+    }
+
+    /**
+     * Upload events for a body the page "sent" (it went via the extension)
+     */
+    function fireUploadEvents(xhr, size) {
+        if (!size) return;
+        for (const type of ['loadstart', 'progress', 'load', 'loadend']) {
+            const loaded = type === 'loadstart' ? 0 : size;
+            xhr.upload.dispatchEvent(new ProgressEvent(type, { lengthComputable: true, loaded, total: size }));
+        }
     }
 
     /**
@@ -479,6 +601,7 @@
         if (st.pending) {
             st.aborted = true;
             st.pending = false;
+            st.abortController?.abort();
             if (st.fake) st.fake.readyState = 0;
             fire(this, 'abort');
             fire(this, 'loadend');
@@ -545,17 +668,33 @@
                 if (serialized.contentType && !headerValue(headers, 'content-type')) {
                     headers.push(['Content-Type', serialized.contentType]);
                 }
+                st.abortController = new AbortController();
+                const bodySize = serialized.body?.byteLength || 0;
                 const res = await proxyThroughExtension({
                     url, method, headers,
                     body: serialized.body,
                     credentials: credentialsFor(url, xhr.withCredentials ? 'include' : 'same-origin')
-                });
+                }, st.abortController.signal);
                 if (st.aborted) return;
-                st.pending = false;
+                fireUploadEvents(xhr, bodySize);
                 report('REQUEST_INTERCEPTED', { type: 'proxy', url, method, ruleId: proxyRule.id, status: res.status });
+
+                const response = beginXhrResponse(xhr, res);
+                const reader = res.body.getReader();
+                try {
+                    for (;;) {
+                        const { done, value } = await reader.read();
+                        if (done || st.aborted) break;
+                        response.chunk(value);
+                    }
+                } catch {
+                    if (!st.aborted) response.fail();
+                    return;
+                }
+                if (st.aborted) return;
+                response.end();
                 const contentType = headerValue(res.headers, 'content-type');
-                if (isTextual(contentType)) recordBody(url, method, res.status, contentType, textDecoder.decode(res.body));
-                fulfillXhr(xhr, res);
+                if (isTextual(contentType)) recordBody(url, method, res.status, contentType, response.text());
                 return;
             }
 

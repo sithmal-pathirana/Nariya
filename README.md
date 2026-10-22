@@ -12,12 +12,16 @@ Named after the clever fox, Nariya gives you the cunning tools needed to interce
 - **Smart Redirection:** Redirect URLs using simple wildcards (`*`) or powerful regex patterns.
 - **Header Modification:** Add, remove, or modify request and response headers globally or for specific domains.
 - **CORS-Free Development:** Pages on your dev sites (default `localhost`, `127.0.0.1`; configurable in Settings) can call any API cross-origin in a normal Chrome profile — preflights, cookies and `Authorization` included. `Access-Control-Allow-Origin` is set to the page's exact origin, and other sites (Gmail, Google Chat, ...) are left untouched. The **CORS Status** panel in Settings shows active origins, learned headers and recent preflights.
-- **Send via Nariya (Proxy rules):** If an API answers the preflight `OPTIONS` with 401/404/405, no header can fix it. A Proxy rule makes Nariya's background worker perform matching fetch/XHR calls instead of the page, so there is no CORS check and no preflight. The API sees your page's `Origin`. Only for pages on the CORS bypass sites. The CORS Status panel offers "Create proxy rule" next to any rejected preflight.
+- **Send via Nariya (Proxy rules):** If an API answers the preflight `OPTIONS` with 401/404/405, no header can fix it. A Proxy rule makes Nariya's background worker perform matching fetch/XHR calls instead of the page, so there is no CORS check and no preflight. Responses stream back as they arrive (streaming APIs and SSE work), with XHR progress/upload events and abort. The API sees your page's `Origin`, even when several dev servers call it at once. Only for pages on the CORS bypass sites. The CORS Status panel offers "Create proxy rule" next to any rejected preflight.
 
 ### 🔍 Deep Network Inspection
 - **CDP-Powered Interception:** Uses the Chrome Debugger API to pause requests and responses, allowing for manual inspection and modification before they reach their destination.
 - **Repeater:** Replay any intercepted request with custom modifications to headers, body, or URL. Perfect for API testing.
 - **Request Recorder → Postman:** Record a tab's API calls (method, URL, headers, body, status and response body), then export a **Postman v2.1 collection** with a `{{baseUrl}}` variable per host, tokens moved into `{{authToken}}`/`{{apiKey}}` variables, one request per endpoint, example responses and generated tests (status code, content type, response fields, response time). HAR export too.
+
+### 💾 Rule Storage
+- **Browser storage** (default), or keep a live copy in **`nariya_rules.json`** in a **folder on disk** (great for version control) or in **Google Drive** (sync between machines). Every change is written automatically; connecting a folder or Drive that already has rules offers to import them. Settings shows the last sync and lets you re-grant folder access if Chrome asks again.
+- **Nariya Cloud:** optional backend for sign-in, rule sync, sharing and large cloud-stored mock bodies.
 
 ### 🎭 Content Manipulation
 - **Mocking:** Replace server responses with custom JSON, HTML, or plain text, with optional delay, custom headers and cloud-stored bodies. Works for `fetch` and `XMLHttpRequest` (including `responseType`, `getResponseHeader` and the usual events).
@@ -46,7 +50,10 @@ Google sign-in uses `chrome.identity`, which needs a real OAuth client ID:
 Until then the Sign In button stays disabled; everything else works locally.
 
 ### Packaging for the Chrome Web Store
-Zip the extension without the development folders: `backend/`, `infra/`, `tests/` and `.github/`.
+```bash
+node tools/package.mjs     # → dist/nariya-<version>.zip (runtime files only)
+```
+CI builds the same zip on every push and attaches it to the run as the `nariya-extension` artifact.
 
 ---
 
@@ -59,11 +66,13 @@ Zip the extension without the development folders: `backend/`, `infra/`, `tests/
     -   `cors-bypass.js`: Scoped CORS bypass (per-origin session rules, learned headers, preflight log).
     -   `recorder.js` / `postman.js`: Request recorder and Postman/HAR export.
     -   `url-match.js`: URL pattern matching shared by rules and the dashboard's URL tester.
+    -   `storage/mirror.js`: Writes `nariya_rules.json` to a folder or Google Drive.
     -   `debugger-proxy.js`: Wrapper for the Chrome Debugger Protocol.
     -   `repeater.js`: Request history and replay.
 -   `ui/`: Dashboard, popup and shared UI helpers.
 -   `sandbox/`: Secure environment for executing custom scripts.
 -   `tests/`: Unit tests and Playwright end-to-end tests that load the extension into Chromium.
+-   `tools/package.mjs`: Builds the Web Store zip.
 -   `backend/`, `infra/`: Optional Nariya Cloud backend and deployment.
 
 ---
@@ -90,9 +99,11 @@ cd tests
 npm install
 npx playwright install chromium   # full Chromium; the headless shell cannot load extensions
 npm test                          # or: npm run test:unit / npm run test:e2e
+npm run lint                      # ESLint over the extension sources
+npm run package                   # build dist/nariya-<version>.zip
 ```
 
-The end-to-end tests start local servers, load the unpacked extension into Chromium with no special flags, and check CORS, mocks, delays, proxy rules, the recorder and the dashboard. They run on every push via GitHub Actions (`.github/workflows/test.yml`).
+The end-to-end tests start local servers, load the unpacked extension (and the packaged build) into Chromium with no special flags, and check CORS, mocks (including cloud mocks), delays, proxy streaming, the recorder, rule-file sync and the dashboard. They run on every push via GitHub Actions (`.github/workflows/test.yml`).
 
 ---
 

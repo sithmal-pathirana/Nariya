@@ -8,11 +8,10 @@ import * as debuggerHandler from './handlers/debugger-handler.js';
 import * as repeaterHandler from './handlers/repeater-handler.js';
 import * as miscHandler from './handlers/misc-handler.js';
 import * as storage from '../core/storage/storage.js';
-import * as repeater from '../core/repeater.js';
 import * as analyzer from '../core/analyzer.js';
 import * as executionLogs from '../core/execution-logs.js';
-import * as debuggerProxy from '../core/debugger-proxy.js';
 import * as recorder from '../core/recorder.js';
+import { mirrorNow, getMirrorStatus } from '../core/storage/mirror.js';
 import { getCorsStatus, clearLearnedHeaders, clearPreflightLog } from '../core/cors-bypass.js';
 
 /**
@@ -94,6 +93,17 @@ export async function handleUIMessage(message, sender, sendResponse, syncRulesFn
             case 'CORS_CLEAR_PREFLIGHTS': {
                 await clearPreflightLog();
                 sendResponse({ ok: true });
+                break;
+            }
+
+            // --- Rules file (folder / Google Drive) ---
+            case 'MIRROR_NOW': {
+                const status = await mirrorNow(await storage.getAllRules(), await storage.getSettings());
+                sendResponse({ ok: true, data: status });
+                break;
+            }
+            case 'MIRROR_STATUS': {
+                sendResponse({ ok: true, data: await getMirrorStatus() });
                 break;
             }
 

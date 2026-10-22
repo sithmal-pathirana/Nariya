@@ -58,6 +58,23 @@ export async function startApiServer({ properOrigin } = {}) {
             }
             res.setHeader('Content-Type', 'application/json');
             res.setHeader('X-Server', 'nariya-test');
+            if (url.pathname === '/stream') {
+                // Three chunks, 300ms apart; records whether the client hung up early
+                res.setHeader('Content-Type', 'text/plain');
+                let i = 0;
+                const timer = setInterval(() => {
+                    res.write(`chunk${i}\n`);
+                    if (++i === 3) { clearInterval(timer); res.end(); }
+                }, 300);
+                res.on('close', () => {
+                    if (i < 3) { clearInterval(timer); log.push({ method: req.method, path: '/stream', aborted: true }); }
+                });
+                return;
+            }
+            if (url.pathname === '/slow-origin') {
+                const ms = parseInt(url.searchParams.get('ms') || '300', 10);
+                return setTimeout(() => res.end(JSON.stringify({ origin: req.headers.origin || null })), ms);
+            }
             if (url.pathname === '/echo') {
                 return res.end(JSON.stringify({ method: req.method, headers: req.headers, body, query: url.search }));
             }

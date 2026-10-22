@@ -132,6 +132,70 @@ test('proxy rule: requests the server would reject at preflight succeed', async 
     await page.close();
 });
 
+test('proxy streams responses, reports progress and supports abort', async () => {
+    await ext.send('SAVE_RULE', { type: 'proxy', urlFilter: `api.test:${api.port}/`, config: { name: 'p' } });
+    const page = await ext.open(DEV);
+
+    // fetch: the first chunk arrives long before the response ends
+    const timing = JSON.parse(await page.evaluate(`(async () => {
+        const t0 = performance.now();
+        const res = await fetch('${API}/stream');
+        const reader = res.body.getReader();
+        const first = await reader.read();
+        const tFirst = performance.now() - t0;
+        let text = new TextDecoder().decode(first.value);
+        for (;;) { const { done, value } = await reader.read(); if (done) break; text += new TextDecoder().decode(value); }
+        return JSON.stringify({ tFirst, tAll: performance.now() - t0, text });
+    })()`));
+    assert.equal(timing.text, 'chunk0\nchunk1\nchunk2\n');
+    assert.ok(timing.tFirst < timing.tAll - 400, JSON.stringify(timing));
+
+    // XHR: progress per chunk, upload events for the body
+    const xhr = JSON.parse(await page.evaluate(`new Promise(res => {
+        const x = new XMLHttpRequest();
+        const ev = { progress: 0, upload: [], partial: [] };
+        x.open('POST', '${API}/stream');
+        x.upload.onloadstart = () => ev.upload.push('loadstart');
+        x.upload.onload = () => ev.upload.push('load');
+        x.onprogress = () => { ev.progress++; ev.partial.push(x.responseText.length); };
+        x.onload = () => res(JSON.stringify({ ...ev, text: x.responseText }));
+        x.send('payload');
+    })`));
+    assert.ok(xhr.progress >= 3, JSON.stringify(xhr));
+    assert.deepEqual(xhr.upload, ['loadstart', 'load']);
+    assert.ok(xhr.partial[0] < xhr.text.length, 'responseText grows while loading');
+
+    // Abort mid-stream: the page sees AbortError and the server sees the hang-up
+    api.log.length = 0;
+    const aborted = await page.evaluate(`(async () => {
+        const ctl = new AbortController();
+        const res = await fetch('${API}/stream', { signal: ctl.signal });
+        const reader = res.body.getReader();
+        await reader.read();
+        ctl.abort();
+        try { await reader.read(); return 'not aborted'; } catch (e) { return e.name; }
+    })()`);
+    assert.equal(aborted, 'AbortError');
+    await sleep(500);
+    assert.ok(api.log.some(l => l.path === '/stream' && l.aborted), 'server saw the client abort');
+    await page.close();
+});
+
+test('proxy: two dev origins calling one API at once each send their own Origin', async (t) => {
+    await ext.send('SAVE_RULE', { type: 'proxy', urlFilter: `api.test:${api.port}/`, config: { name: 'p' } });
+    const app2 = await startAppServer();
+    t.after(() => app2.server.close());
+    const DEV2 = `http://localhost:${app2.port}`;
+    const a = await ext.open(DEV);
+    const b = await ext.open(DEV2);
+    const call = (page) => page.evaluate(`Promise.all([1, 2, 3].map(i => fetch('${API}/slow-origin?ms=300&i=' + i).then(r => r.json()).then(j => j.origin)))`);
+    const [fromA, fromB] = await Promise.all([call(a), call(b)]);
+    assert.deepEqual(fromA, [DEV, DEV, DEV]);
+    assert.deepEqual(fromB, [DEV2, DEV2, DEV2]);
+    await a.close();
+    await b.close();
+});
+
 test('proxy is refused for pages outside the CORS bypass sites', async () => {
     await ext.send('SAVE_RULE', { type: 'proxy', urlFilter: `api.test:${api.port}/`, config: { name: 'p' } });
     const page = await ext.open(`http://other.test:${app.port}`);

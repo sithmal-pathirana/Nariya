@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { matchesUrl, dnrUrlFilterToRegExp, dnrRuleMatches } from '../../core/url-match.js';
+import { matchesUrl, dnrUrlFilterToRegExp, dnrRuleMatches, pickAppliedRules } from '../../core/url-match.js';
 
 test('matchesUrl: wildcards match anywhere, like DNR urlFilter', () => {
     assert.ok(matchesUrl('https://host/api/users?x=1', '/api/*'));
@@ -33,4 +33,17 @@ test('dnrRuleMatches: resource types, methods and regex rules', () => {
     assert.ok(!dnrRuleMatches(noTypes, { url: 'https://a.com/', type: 'main_frame', method: 'GET', tabId: 1 }));
     const regex = { condition: { regexFilter: '^https://a\\.com/(.*)', resourceTypes: ['script'] } };
     assert.ok(dnrRuleMatches(regex, { url: 'https://a.com/x.js', type: 'script', method: 'GET', tabId: 1 }));
+});
+
+test('pickAppliedRules: top redirect wins, otherwise all header rules', () => {
+    const req = { url: 'https://a.com/api/x', type: 'xmlhttprequest', method: 'GET', tabId: 1 };
+    const types = ['xmlhttprequest'];
+    const h1 = { id: 1, priority: 1, action: { type: 'modifyHeaders' }, condition: { urlFilter: '*api*', resourceTypes: types } };
+    const h2 = { id: 2, priority: 5, action: { type: 'modifyHeaders' }, condition: { urlFilter: '*a.com*', resourceTypes: types } };
+    const r1 = { id: 3, priority: 1, action: { type: 'redirect' }, condition: { urlFilter: '*api*', resourceTypes: types } };
+    const r2 = { id: 4, priority: 3, action: { type: 'redirect' }, condition: { urlFilter: '*/x', resourceTypes: types } };
+    const miss = { id: 5, priority: 9, action: { type: 'redirect' }, condition: { urlFilter: '*b.com*', resourceTypes: types } };
+    assert.deepEqual(pickAppliedRules([h1, h2], req).map(r => r.id), [1, 2]);
+    assert.deepEqual(pickAppliedRules([h1, h2, r1, r2, miss], req).map(r => r.id), [4]);
+    assert.deepEqual(pickAppliedRules([miss], req), []);
 });

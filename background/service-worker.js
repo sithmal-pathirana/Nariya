@@ -7,10 +7,10 @@
 import { getAllRules, getSettings } from '../core/storage/storage.js';
 import { compileAllRules, applyRules, clearAllDnrRules, getInterceptorRules, activeRuleMap, activeDnrRules } from '../core/rules-engine.js';
 import { setupCorsBypass, syncCorsRules } from '../core/cors-bypass.js';
-import { dnrRuleMatches } from '../core/url-match.js';
+import { pickAppliedRules } from '../core/url-match.js';
 import * as recorder from '../core/recorder.js';
 import { syncInterceptorRegistration } from './content-scripts.js';
-import { proxyFetch, resolveMockBody } from './handlers/page-handler.js';
+import { handleProxyPort, resolveMockBody, PROXY_PORT_NAME } from './handlers/page-handler.js';
 import * as debuggerProxy from '../core/debugger-proxy.js';
 import * as repeater from '../core/repeater.js';
 import * as analyzer from '../core/analyzer.js';
@@ -251,6 +251,11 @@ function broadcastToExtensionPages(message) {
     chrome.runtime.sendMessage(message).catch(() => { });
 }
 
+// Proxied page requests stream over their own port
+chrome.runtime.onConnect.addListener((port) => {
+    if (port.name === PROXY_PORT_NAME) handleProxyPort(port);
+});
+
 // ═══════════════════════════════════════════════════════════════════
 //  Message Handler
 // ═══════════════════════════════════════════════════════════════════
@@ -282,12 +287,6 @@ function handleBridgeMessage(message, sender, sendResponse) {
                     recording
                 }))
                 .catch(() => sendResponse({ rules: [], recording: false }));
-            break;
-
-        case 'PROXY_FETCH':
-            proxyFetch(message.payload || {}, sender)
-                .then(sendResponse)
-                .catch(e => sendResponse({ ok: false, error: e.message }));
             break;
 
         case 'RESOLVE_MOCK_BODY':
@@ -375,13 +374,9 @@ if (chrome.declarativeNetRequest.onRuleMatchedDebug) {
     });
 } else {
     // Web Store installs: onRuleMatchedDebug does not exist, so evaluate the
-    // compiled rules against observed requests ourselves (highest priority wins)
+    // compiled rules against observed requests ourselves
     chrome.webRequest.onBeforeRequest.addListener((details) => {
         if (details.tabId < 0 || activeDnrRules.length === 0) return;
-        let best = null;
-        for (const dnrRule of activeDnrRules) {
-            if ((!best || dnrRule.priority > best.priority) && dnrRuleMatches(dnrRule, details)) best = dnrRule;
-        }
-        if (best) reportDnrMatch(best.id, details);
+        for (const rule of pickAppliedRules(activeDnrRules, details)) reportDnrMatch(rule.id, details);
     }, { urls: ['<all_urls>'] });
 }

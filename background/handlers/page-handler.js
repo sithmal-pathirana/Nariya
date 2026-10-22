@@ -1,14 +1,18 @@
 /**
  * Nariya — Page Call Handler
  * Requests coming from the in-page interceptor via bridge.js:
- * proxying fetch/XHR through the service worker and loading cloud mock bodies.
+ * proxying fetch/XHR through the service worker (streamed over a runtime
+ * port) and loading cloud mock bodies.
  */
 
 import { getAllRules, getSettings } from '../../core/storage/storage.js';
 import { isBypassOrigin } from '../../core/cors-bypass.js';
 import { matchesUrl } from '../../core/url-match.js';
 
-const PROXY_TIMEOUT_MS = 60000;
+export const PROXY_PORT_NAME = 'nariya-proxy';
+
+// Time allowed until response headers arrive; the body may stream for longer
+const PROXY_HEADERS_TIMEOUT_MS = 60000;
 
 // Session rules that give proxied requests the page's Origin instead of
 // chrome-extension://<id>, which many backends reject. One rule per API host.
@@ -16,11 +20,18 @@ const ORIGIN_RULE_ID_BASE = 910000;
 const ORIGIN_RULE_ID_MAX = 910999;
 const originRules = new Map(); // host -> { id, origin }
 let originRulesChain = null;
+
+// Per API host: which Origin the rule currently carries, how many requests
+// are waiting for their response headers with it, and who is queued for a
+// different Origin. Requests from two dev origins to the same host take
+// turns, so each one is sent with its own Origin.
+const originGates = new Map(); // host -> { origin, inFlight, queue: [{ origin, resolve }] }
+
 const MOCK_CACHE_TTL_MS = 5 * 60 * 1000;
 const mockBodyCache = new Map();
 
 function bufferToBase64(buffer) {
-    const bytes = new Uint8Array(buffer);
+    const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
     let bin = '';
     for (let i = 0; i < bytes.length; i += 0x8000) {
         bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
@@ -35,6 +46,8 @@ function base64ToBytes(b64) {
     return bytes;
 }
 
+// ─── Origin rewriting ────────────────────────────────────────────
+
 async function loadOriginRules() {
     const rules = await chrome.declarativeNetRequest.getSessionRules();
     for (const r of rules) {
@@ -44,9 +57,7 @@ async function loadOriginRules() {
 }
 
 /**
- * Make the service worker's requests to `host` carry `origin` as Origin.
- * Two dev origins proxying to the same API host at the same moment share
- * the rule; the most recent one wins.
+ * Make the service worker's requests to `host` carry `origin` as Origin
  */
 function setProxyOrigin(host, origin) {
     originRulesChain = (originRulesChain || loadOriginRules()).then(async () => {
@@ -78,19 +89,53 @@ function setProxyOrigin(host, origin) {
     return originRulesChain;
 }
 
+function drainGate(host, gate) {
+    while (gate.queue.length > 0) {
+        const next = gate.queue[0];
+        if (gate.inFlight > 0 && next.origin !== gate.origin) break;
+        gate.queue.shift();
+        gate.inFlight++;
+        gate.origin = next.origin;
+        let released = false;
+        const release = () => {
+            if (released) return;
+            released = true;
+            gate.inFlight--;
+            drainGate(host, gate);
+        };
+        next.resolve(setProxyOrigin(host, next.origin).then(() => release));
+    }
+}
+
+/**
+ * Wait until requests to `host` can be sent with `origin`.
+ * @returns {Promise<Function>} release — call once response headers arrive
+ */
+export function acquireOrigin(host, origin) {
+    let gate = originGates.get(host);
+    if (!gate) {
+        gate = { origin: null, inFlight: 0, queue: [] };
+        originGates.set(host, gate);
+    }
+    return new Promise((resolve) => {
+        gate.queue.push({ origin, resolve });
+        drainGate(host, gate);
+    });
+}
+
+// ─── Proxy ───────────────────────────────────────────────────────
+
 function senderOrigin(sender) {
-    if (sender.origin && sender.origin !== 'null') return sender.origin;
+    if (sender?.origin && sender.origin !== 'null') return sender.origin;
     try { return new URL(sender.url).origin; } catch { return null; }
 }
 
 /**
- * Perform a page's request from the service worker, where CORS does not
- * apply (host_permissions), so no preflight is sent at all. Only allowed
- * for pages on the CORS bypass sites and URLs matched by an enabled proxy rule.
- * @param {{ url, method, headers: Array, bodyBase64?, credentials }} req
- * @param {chrome.runtime.MessageSender} sender
+ * Only pages on the CORS bypass sites, and only URLs matched by an
+ * enabled proxy rule, may be proxied.
+ * @returns {Promise<{ ok: true, origin, target } | { ok: false, error }>}
  */
-export async function proxyFetch(req, sender) {
+async function checkProxyRequest(req, sender) {
     const settings = await getSettings();
     if (!settings.globalEnabled) return { ok: false, error: 'Nariya is disabled' };
 
@@ -106,43 +151,107 @@ export async function proxyFetch(req, sender) {
     }
 
     const rules = await getAllRules();
-    const rule = rules.find(r => r.enabled && r.type === 'proxy' && matchesUrl(req.url, r.urlFilter));
-    if (!rule) return { ok: false, error: 'No enabled proxy rule matches this URL' };
-
-    const headers = new Headers();
-    for (const [name, value] of req.headers || []) {
-        try { headers.append(name, value); } catch { /* forbidden or invalid header */ }
+    if (!rules.some(r => r.enabled && r.type === 'proxy' && matchesUrl(req.url, r.urlFilter))) {
+        return { ok: false, error: 'No enabled proxy rule matches this URL' };
     }
-    const method = String(req.method || 'GET').toUpperCase();
+    return { ok: true, origin, target };
+}
 
-    await setProxyOrigin(target.hostname, origin);
+/**
+ * Serve one proxied request over a runtime port opened by bridge.js.
+ * The page's request is performed here, where CORS does not apply
+ * (host_permissions), so no preflight is sent. The response is streamed
+ * back: { type: 'head' }, then { type: 'chunk' }..., then { type: 'end' }
+ * or { type: 'error' }. Disconnecting the port aborts the request.
+ *
+ * Request message: { type: 'start', request: { url, method, headers: [[k, v]],
+ *   bodyBase64?, credentials } }
+ * @param {chrome.runtime.Port} port
+ */
+export function handleProxyPort(port) {
+    const controller = new AbortController();
+    let finished = false;
 
-    try {
-        const res = await fetch(req.url, {
-            method,
-            headers,
-            body: req.bodyBase64 && method !== 'GET' && method !== 'HEAD' ? base64ToBytes(req.bodyBase64) : undefined,
-            credentials: req.credentials === 'include' ? 'include' : 'omit',
-            redirect: 'follow',
-            cache: 'no-store',
-            signal: AbortSignal.timeout(PROXY_TIMEOUT_MS)
-        });
-        const body = await res.arrayBuffer();
-        return {
-            ok: true,
-            response: {
+    const post = (msg) => {
+        try { port.postMessage(msg); } catch { finished = true; controller.abort(); }
+    };
+    const finish = (msg) => {
+        if (finished) return;
+        finished = true;
+        post(msg);
+        try { port.disconnect(); } catch { }
+    };
+
+    port.onDisconnect.addListener(() => {
+        if (!finished) {
+            finished = true;
+            controller.abort();
+        }
+    });
+
+    port.onMessage.addListener(async (msg) => {
+        if (msg?.type !== 'start') return;
+        const req = msg.request || {};
+
+        const check = await checkProxyRequest(req, port.sender);
+        if (!check.ok) return finish({ type: 'error', error: check.error });
+
+        const headers = new Headers();
+        for (const [name, value] of req.headers || []) {
+            try { headers.append(name, value); } catch { /* forbidden or invalid header */ }
+        }
+        const method = String(req.method || 'GET').toUpperCase();
+
+        const release = await acquireOrigin(check.target.hostname, check.origin);
+        if (finished) return release();
+
+        const headersTimer = setTimeout(() => controller.abort(new Error('Timed out waiting for response headers')), PROXY_HEADERS_TIMEOUT_MS);
+        let res;
+        try {
+            res = await fetch(req.url, {
+                method,
+                headers,
+                body: req.bodyBase64 && method !== 'GET' && method !== 'HEAD' ? base64ToBytes(req.bodyBase64) : undefined,
+                credentials: req.credentials === 'include' ? 'include' : 'omit',
+                redirect: 'follow',
+                cache: 'no-store',
+                signal: controller.signal
+            });
+        } catch (e) {
+            return finish({ type: 'error', error: controller.signal.reason?.message || e.message || 'Network error' });
+        } finally {
+            clearTimeout(headersTimer);
+            release();
+        }
+
+        post({
+            type: 'head',
+            head: {
                 status: res.status,
                 statusText: res.statusText,
                 headers: [...res.headers],
-                bodyBase64: bufferToBase64(body),
                 url: res.url,
                 redirected: res.redirected
             }
-        };
-    } catch (e) {
-        return { ok: false, error: e.message || 'Network error' };
-    }
+        });
+
+        try {
+            if (res.body) {
+                const reader = res.body.getReader();
+                while (!finished) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    post({ type: 'chunk', data: bufferToBase64(value) });
+                }
+            }
+            finish({ type: 'end' });
+        } catch (e) {
+            finish({ type: 'error', error: e.message || 'Stream error' });
+        }
+    });
 }
+
+// ─── Cloud mocks ─────────────────────────────────────────────────
 
 /**
  * Load the body of a mock stored in cloud object storage
