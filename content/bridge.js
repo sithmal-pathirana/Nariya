@@ -94,8 +94,8 @@
 
             case 'CALL': {
                 let result;
-                if (data.call === 'RESOLVE_MOCK_BODY') {
-                    result = await toServiceWorker('RESOLVE_MOCK_BODY', data.payload);
+                if (data.call === 'RESOLVE_MOCK_BODY' || data.call === 'ENSURE_CORS_HEADERS') {
+                    result = await toServiceWorker(data.call, data.payload);
                 } else {
                     result = { ok: false, error: `Unknown call ${data.call}` };
                 }

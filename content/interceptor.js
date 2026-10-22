@@ -37,6 +37,7 @@
     let mockRules = [];
     let delayRules = [];
     let proxyRules = [];
+    let redirectRules = [];
     let recording = false;
 
     const MAX_RECORDED_BODY = 256 * 1024;
@@ -66,6 +67,7 @@
                 mockRules = rules.filter(r => r.type === 'mock');
                 delayRules = rules.filter(r => r.type === 'delay');
                 proxyRules = rules.filter(r => r.type === 'proxy');
+                redirectRules = rules.filter(r => r.type === 'redirect');
                 break;
             }
             case 'RECORDING':
@@ -139,7 +141,96 @@
 
     const findRule = (rules, url) => rules.find(r => matchesUrl(url, r.urlFilter));
 
-    const hasRules = () => mockRules.length > 0 || delayRules.length > 0 || proxyRules.length > 0;
+    const hasRules = () => mockRules.length > 0 || delayRules.length > 0 || proxyRules.length > 0 ||
+        redirectRules.length > 0;
+
+    // Header names already reported to Nariya for the CORS bypass
+    const announcedHeaders = new Set();
+    const ANNOUNCE_TIMEOUT_MS = 1000;
+
+    /**
+     * Before a cross-origin request with header names Nariya has not seen,
+     * ask it to allow them (credentialed preflights need explicit names).
+     * Never waits more than a second.
+     * @param {string} target - URL the request goes to
+     * @param {Iterable<string>} names
+     */
+    function announceHeaders(target, names) {
+        let crossOrigin = false;
+        try { crossOrigin = new URL(target).origin !== window.location.origin; } catch { }
+        if (!crossOrigin || !port) return null;
+        const fresh = [...new Set([...names].map(n => String(n).toLowerCase()))].filter(n => !announcedHeaders.has(n));
+        if (fresh.length === 0) return null;
+        fresh.forEach(n => announcedHeaders.add(n));
+        return Promise.race([
+            callExtension('ENSURE_CORS_HEADERS', { headers: fresh }),
+            new Promise(resolve => setTimeout(resolve, ANNOUNCE_TIMEOUT_MS))
+        ]);
+    }
+
+    /**
+     * declarativeNetRequest urlFilter → RegExp (copy of core/url-match.js)
+     */
+    function dnrUrlFilterToRegExp(filter) {
+        let f = filter || '*';
+        let prefix = '';
+        let suffix = '';
+        if (f.startsWith('||')) {
+            prefix = '^[a-z][a-z0-9+.-]*:\\/\\/([^/?#]*\\.)?';
+            f = f.slice(2);
+        } else if (f.startsWith('|')) {
+            prefix = '^';
+            f = f.slice(1);
+        }
+        if (f.endsWith('|')) {
+            suffix = '$';
+            f = f.slice(0, -1);
+        }
+        const body = f.split('').map((ch) => {
+            if (ch === '*') return '.*';
+            if (ch === '^') return '(?:[^a-zA-Z0-9_.%-]|$)';
+            return ch.replace(/[.+?${}()|[\]\\/]/g, '\\$&');
+        }).join('');
+        return new RegExp(prefix + body + suffix, 'i');
+    }
+
+    /**
+     * Where a redirect rule sends this cross-origin call, if it changes the
+     * origin. Chrome would otherwise follow the rule's redirect from one
+     * foreign origin to another and send the call with "Origin: null",
+     * which breaks CORS; going straight to the destination keeps the page's
+     * real origin. Same-origin calls are left to the browser-level redirect.
+     * @returns {string|null}
+     */
+    function rewriteForRedirect(url) {
+        if (redirectRules.length === 0) return null;
+        let from;
+        try { from = new URL(url); } catch { return null; }
+        if (from.origin === window.location.origin) return null;
+
+        for (const rule of redirectRules) {
+            let to = null;
+            try {
+                if (rule.regexFilter) {
+                    const re = new RegExp(rule.regexFilter);
+                    if (re.test(url)) {
+                        // DNR uses \1 and \0; JS replace uses $1 and $&
+                        const substitution = String(rule.regexSubstitution || '')
+                            .replace(/\$/g, '$$$$')
+                            .replace(/\\(\d)/g, (m, d) => (d === '0' ? '$&' : '$' + d));
+                        to = url.replace(re, substitution);
+                    }
+                } else if (rule.url && dnrUrlFilterToRegExp(rule.urlFilter).test(url)) {
+                    to = rule.url;
+                }
+                if (!to) continue;
+                return new URL(to).origin === from.origin ? null : new URL(to).href;
+            } catch {
+                continue;
+            }
+        }
+        return null;
+    }
 
     function resolveUrl(url) {
         try {
@@ -340,6 +431,27 @@
         return handleFetch(this, args, { input, init, isRequest, url, method });
     };
 
+    /**
+     * fetch() arguments aimed at `target` instead of the original URL
+     */
+    async function retargetFetchArgs(target, input, init, isRequest) {
+        if (!isRequest) return [target, init];
+        const body = input.method === 'GET' || input.method === 'HEAD' ? undefined : await input.clone().arrayBuffer();
+        return [new NativeRequest(target, {
+            method: input.method,
+            headers: input.headers,
+            body,
+            mode: input.mode === 'navigate' ? undefined : input.mode,
+            credentials: input.credentials,
+            cache: input.cache,
+            redirect: input.redirect,
+            referrerPolicy: input.referrerPolicy,
+            integrity: input.integrity,
+            keepalive: input.keepalive,
+            signal: input.signal
+        }), init];
+    }
+
     async function handleFetch(self, args, { input, init, isRequest, url, method }) {
         const signal = init?.signal || (isRequest ? input.signal : undefined);
         if (signal?.aborted) throw abortError();
@@ -388,6 +500,14 @@
             }
             return toFetchResponse(res);
         }
+
+        const redirectTarget = rewriteForRedirect(url);
+        if (redirectTarget) args = await retargetFetchArgs(redirectTarget, input, init, isRequest);
+
+        const headerNames = new Headers(isRequest ? input.headers : undefined);
+        if (init?.headers) new Headers(init.headers).forEach((value, name) => headerNames.set(name, value));
+        const announcing = announceHeaders(redirectTarget || url, headerNames.keys());
+        if (announcing) await announcing;
 
         const response = await originalFetch.apply(self, args);
 
@@ -588,8 +708,29 @@
         st.aborted = false;
         st.pending = false;
         clearSynthetic(this);
-        return originalOpen.call(this, method, url, ...(arguments.length > 2 ? [async, ...rest] : []));
+        // Rules still match the original URL; the network call goes to the
+        // redirect target when a rule would otherwise taint the origin
+        const target = rewriteForRedirect(st.url) || url;
+        st.networkUrl = resolveUrl(target) || st.url;
+        return originalOpen.call(this, method, target, ...(arguments.length > 2 ? [async, ...rest] : []));
     };
+
+    /**
+     * Hand the XHR to the browser, capturing the response body if recording
+     */
+    function xhrSendForReal(xhr, body, url, method) {
+        if (recording) {
+            xhr.addEventListener('load', () => {
+                const rt = xhr.responseType;
+                if (rt !== '' && rt !== 'text' && rt !== 'json') return;
+                const contentType = xhr.getResponseHeader('content-type');
+                if (!isTextual(contentType)) return;
+                const text = rt === 'json' ? JSON.stringify(xhr.response) : xhr.responseText;
+                recordBody(url, method, xhr.status, contentType, text);
+            }, { once: true });
+        }
+        return originalSend.call(xhr, body);
+    }
 
     xhrProto.setRequestHeader = function (name, value) {
         stateOf(this).headers.push([String(name), String(value)]);
@@ -622,19 +763,21 @@
         const delayRule = findRule(delayRules, url);
         const mockRule = findRule(mockRules, url);
         const proxyRule = !mockRule && findRule(proxyRules, url);
+        const announcing = !mockRule && !proxyRule &&
+            announceHeaders(st.networkUrl || url, st.headers.map(([name]) => name));
 
         if (!delayRule && !mockRule && !proxyRule) {
-            if (recording) {
-                this.addEventListener('load', () => {
-                    const rt = this.responseType;
-                    if (rt !== '' && rt !== 'text' && rt !== 'json') return;
-                    const contentType = this.getResponseHeader('content-type');
-                    if (!isTextual(contentType)) return;
-                    const text = rt === 'json' ? JSON.stringify(this.response) : this.responseText;
-                    recordBody(url, method, this.status, contentType, text);
-                }, { once: true });
+            if (announcing) {
+                // Let Nariya allow the new header names, then send for real
+                st.pending = true;
+                announcing.then(() => {
+                    if (st.aborted) return;
+                    st.pending = false;
+                    xhrSendForReal(this, body, url, method);
+                });
+                return;
             }
-            return originalSend.call(this, body);
+            return xhrSendForReal(this, body, url, method);
         }
 
         st.pending = true;
@@ -642,6 +785,7 @@
         if (mockRule || proxyRule) fire(xhr, 'loadstart');
 
         (async () => {
+            if (announcing) await announcing;
             if (delayRule) {
                 const delayMs = parseInt(delayRule.config?.delayMs, 10) || 1000;
                 report('REQUEST_INTERCEPTED', { type: 'delay', url, method, ruleId: delayRule.id, delayMs });
@@ -700,7 +844,7 @@
 
             // Delay only: now send for real
             st.pending = false;
-            originalSend.call(xhr, body);
+            xhrSendForReal(xhr, body, url, method);
         })().catch((err) => {
             if (st.aborted) return;
             console.warn('[Nariya] Interceptor error:', err);

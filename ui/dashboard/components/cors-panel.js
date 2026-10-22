@@ -7,6 +7,7 @@ import { showToast } from '../../shared/utils.js';
 
 const activeOrigins = document.getElementById('corsActiveOrigins');
 const learnedHeaders = document.getElementById('corsLearnedHeaders');
+const autoSites = document.getElementById('corsAutoSites');
 const preflightList = document.getElementById('corsPreflightList');
 
 let createProxyRule = () => { };
@@ -82,6 +83,7 @@ export async function loadCorsStatus() {
     if (!res.ok) return;
     const { enabled, origins, learnedHeaders: learned, preflights } = res.data;
     chips(activeOrigins, enabled ? origins : [], enabled ? 'Open a page on one of the sites above.' : 'CORS Bypass is off.');
+    chips(autoSites, res.data.autoSites || [], 'None (added when a redirect rule sends a site\'s calls elsewhere)');
     chips(learnedHeaders, learned, 'None yet');
     renderPreflights(preflights);
 }
@@ -94,6 +96,11 @@ export function initCorsPanel({ onCreateProxyRule }) {
     createProxyRule = onCreateProxyRule;
 
     document.getElementById('refreshCorsStatusBtn')?.addEventListener('click', loadCorsStatus);
+    document.getElementById('clearAutoSitesBtn')?.addEventListener('click', async () => {
+        await sendMessage('CORS_CLEAR_AUTO_SITES');
+        showToast('Automatic sites cleared (sites from redirect rules stay while the rules exist)', 'success');
+        loadCorsStatus();
+    });
     document.getElementById('clearLearnedHeadersBtn')?.addEventListener('click', async () => {
         await sendMessage('CORS_CLEAR_LEARNED');
         showToast('Learned headers cleared', 'success');

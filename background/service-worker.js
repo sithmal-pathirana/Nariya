@@ -5,8 +5,8 @@
  */
 
 import { getAllRules, getSettings } from '../core/storage/storage.js';
-import { compileAllRules, applyRules, clearAllDnrRules, getInterceptorRules, activeRuleMap, activeDnrRules } from '../core/rules-engine.js';
-import { setupCorsBypass, syncCorsRules } from '../core/cors-bypass.js';
+import { compileAllRules, applyRules, clearAllDnrRules, getInterceptorRules, getRedirectRewrites, getPageRules, activeRuleMap, activeDnrRules } from '../core/rules-engine.js';
+import { setupCorsBypass, syncCorsRules, getBypassSites, setOnBypassSitesChanged, allowRequestHeaders } from '../core/cors-bypass.js';
 import { pickAppliedRules } from '../core/url-match.js';
 import * as recorder from '../core/recorder.js';
 import { syncInterceptorRegistration } from './content-scripts.js';
@@ -70,6 +70,7 @@ debuggerProxy.setupEventListener();
 
 // CORS bypass: per-origin session rules kept in sync with open tabs
 setupCorsBypass();
+setOnBypassSitesChanged(() => syncInterceptor());
 
 // Request recorder: webRequest capture; tell pages when recording toggles
 let lastRecordingActive = null;
@@ -106,11 +107,23 @@ Promise.all([getAllRules(), getSettings()])
 async function syncInterceptor() {
     try {
         const settings = await getSettings();
-        const rules = getInterceptorRules(await getAllRules());
+        const allRules = await getAllRules();
+        const pageRules = getInterceptorRules(allRules);
+        const rewrites = getRedirectRewrites(allRules);
         const recording = (await recorder.getState()).active;
+        const everywhere = pageRules.length > 0 || recording;
+        const userSites = settings.interceptorSites || [];
+
+        // Mocks/delays/proxy/recorder: the user's site list (empty = all).
+        // Redirect rewrites only: just the CORS bypass sites.
+        let sites = userSites;
+        if (rewrites.length > 0 && (!everywhere || userSites.length > 0)) {
+            sites = [...new Set([...(everywhere ? userSites : []), ...(await getBypassSites(settings))])];
+        }
+
         await syncInterceptorRegistration({
-            needed: settings.globalEnabled && (rules.length > 0 || recording),
-            sites: settings.interceptorSites || []
+            needed: settings.globalEnabled && (everywhere || rewrites.length > 0),
+            sites
         });
     } catch (e) {
         console.warn('[Nariya] Interceptor registration failed:', e);
@@ -148,7 +161,7 @@ async function syncRules() {
     await broadcastToAllTabs({
         target: 'bridge',
         type: 'UPDATE_INTERCEPTOR_RULES',
-        payload: { rules: getInterceptorRules(allRules) }
+        payload: { rules: getPageRules(allRules) }
     });
 }
 
@@ -283,11 +296,22 @@ function handleBridgeMessage(message, sender, sendResponse) {
         case 'GET_INTERCEPTOR_RULES':
             Promise.all([getAllRules(), getSettings(), recorder.isRecordingTab(tabId)])
                 .then(([allRules, settings, recording]) => sendResponse({
-                    rules: settings.globalEnabled ? getInterceptorRules(allRules) : [],
+                    rules: settings.globalEnabled ? getPageRules(allRules) : [],
                     recording
                 }))
                 .catch(() => sendResponse({ rules: [], recording: false }));
             break;
+
+        case 'ENSURE_CORS_HEADERS': {
+            let origin = sender.origin;
+            if (!origin || origin === 'null') {
+                try { origin = new URL(sender.url).origin; } catch { origin = null; }
+            }
+            allowRequestHeaders(origin, message.payload?.headers || [])
+                .then(added => sendResponse({ ok: true, added }))
+                .catch(e => sendResponse({ ok: false, error: e.message }));
+            break;
+        }
 
         case 'RESOLVE_MOCK_BODY':
             resolveMockBody(message.payload || {})

@@ -140,7 +140,7 @@ async function checkProxyRequest(req, sender) {
     if (!settings.globalEnabled) return { ok: false, error: 'Nariya is disabled' };
 
     const origin = senderOrigin(sender);
-    if (!origin || !isBypassOrigin(origin, settings)) {
+    if (!origin || !(await isBypassOrigin(origin, settings))) {
         return { ok: false, error: `${origin} is not in the CORS bypass sites list` };
     }
 

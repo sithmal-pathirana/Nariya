@@ -22,7 +22,7 @@
  * and service-worker requests are covered too.
  */
 
-import { getSettings } from './storage/storage.js';
+import { getSettings, getAllRules } from './storage/storage.js';
 
 // Session rule ID range reserved for CORS rules (user rules live below this)
 export const CORS_RULE_ID_BASE = 900000;
@@ -30,6 +30,8 @@ const CORS_RULE_ID_MAX = 909999;
 
 const ORIGINS_KEY = 'nariya_cors_origins';
 const LEARNED_HEADERS_KEY = 'nariya_cors_learned_headers';
+const AUTO_SITES_KEY = 'nariya_cors_auto_sites';
+const MAX_AUTO_SITES = 50;
 const MAX_REMEMBERED_ORIGINS = 50;
 
 export const DEFAULT_CORS_SITES = ['localhost', '127.0.0.1'];
@@ -105,8 +107,11 @@ function bypassOrigin(url, sites) {
     }
 }
 
-function buildRule(id, priority, origin, allowHeaders, extraCondition) {
-    const host = new URL(origin).hostname;
+/**
+ * @param {string} origin - value for Access-Control-Allow-Origin
+ * @param {Object} condition - DNR condition (resourceTypes is added)
+ */
+function buildRule(id, priority, origin, allowHeaders, condition) {
     return {
         id,
         priority,
@@ -124,11 +129,7 @@ function buildRule(id, priority, origin, allowHeaders, extraCondition) {
                 { header: 'Access-Control-Allow-Private-Network', operation: 'set', value: 'true' }
             ]
         },
-        condition: {
-            initiatorDomains: [host],
-            resourceTypes: RESOURCE_TYPES,
-            ...extraCondition
-        }
+        condition: { ...condition, resourceTypes: RESOURCE_TYPES }
     };
 }
 
@@ -139,26 +140,41 @@ function buildRule(id, priority, origin, allowHeaders, extraCondition) {
  * - One higher-priority rule per open tab, so two dev servers on the same
  *   host with different ports (localhost:3000 + localhost:5173) each get
  *   their own exact origin.
+ * - For redirect-rule destinations: when a page calls another host and a
+ *   rule redirects that call to a third origin, Chrome sends it with
+ *   "Origin: null" and no longer counts the page as its initiator. Requests
+ *   from bypass tabs to those destinations get "Access-Control-Allow-Origin:
+ *   null" (lowest priority, so normal requests keep their real origin).
  * @returns {Array} DNR rules
  */
-export function buildCorsRules({ sites, tabs, rememberedOrigins, allowHeaders }) {
+export function buildCorsRules({ sites, tabs, rememberedOrigins, allowHeaders, redirectTargets = [] }) {
     const rules = [];
     let id = CORS_RULE_ID_BASE;
     const headerValue = allowHeaders.join(', ');
+    const initiator = (origin) => ({ initiatorDomains: [new URL(origin).hostname] });
 
     const byHost = new Map();
     for (const origin of rememberedOrigins) {
         if (bypassOrigin(origin, sites)) byHost.set(new URL(origin).hostname, origin);
     }
     for (const [, origin] of byHost) {
-        rules.push(buildRule(id++, 1, origin, headerValue, {}));
+        rules.push(buildRule(id++, 2, origin, headerValue, initiator(origin)));
     }
 
+    const bypassTabIds = [];
     for (const tab of tabs) {
         const origin = tab.url && bypassOrigin(tab.url, sites);
         if (!origin || tab.id === undefined || tab.id < 0) continue;
         if (id > CORS_RULE_ID_MAX) break;
-        rules.push(buildRule(id++, 2, origin, headerValue, { tabIds: [tab.id] }));
+        bypassTabIds.push(tab.id);
+        rules.push(buildRule(id++, 3, origin, headerValue, { ...initiator(origin), tabIds: [tab.id] }));
+    }
+
+    if (bypassTabIds.length > 0 && redirectTargets.length > 0 && id <= CORS_RULE_ID_MAX) {
+        rules.push(buildRule(id++, 1, 'null', headerValue, {
+            requestDomains: redirectTargets,
+            tabIds: bypassTabIds
+        }));
     }
 
     return rules;
@@ -198,15 +214,107 @@ async function getAllowHeaders(settings) {
     ])];
 }
 
-function getSites(settings) {
-    return normalizeSites(settings.corsBypassSites ?? DEFAULT_CORS_SITES);
+/**
+ * Host a URL pattern is about, e.g. "https://a.com/api/*" or "||a.com^" → "a.com"
+ * (null for patterns like "*" or "/api/*" that name no host)
+ */
+export function patternHost(pattern) {
+    let p = String(pattern || '').trim().replace(/^\|\|?/, '').replace(/^\*+/, '');
+    p = p.replace(/^\^/, '').replace(/^[a-z][a-z0-9+.-]*:\/\//i, '');
+    const host = p.split(/[/:*?^|#\\(]/)[0].toLowerCase();
+    return /^[a-z0-9-]+(\.[a-z0-9-]+)*$/.test(host) && (host.includes('.') || host === 'localhost') ? host : null;
 }
 
 /**
- * Is this origin (a page) one of the configured bypass sites?
+ * Hosts whose calls an enabled redirect rule sends to a different origin.
+ * Pages on those hosts get the CORS bypass automatically, because the
+ * redirect turns their own (same-origin) API calls into cross-origin ones.
+ * @param {Array} rules - user rules
+ * @returns {string[]}
  */
-export function isBypassOrigin(origin, settings) {
-    return !!bypassOrigin(origin, getSites(settings));
+export function redirectRuleSites(rules) {
+    const hosts = new Set();
+    for (const rule of rules) {
+        if (!rule.enabled || rule.type !== 'redirect' || !rule.config?.redirectUrl) continue;
+        const source = patternHost(rule.config.redirectMode === 'replace'
+            ? rule.config.matchPattern || rule.urlFilter
+            : rule.urlFilter);
+        if (!source) continue;
+        let dest;
+        try {
+            // Back-references / wildcards in the target do not affect its origin
+            dest = new URL(rule.config.redirectUrl.replace(/\\\d|\$\d|\*/g, 'x'));
+        } catch {
+            continue;
+        }
+        if (dest.hostname !== source || (dest.port && dest.port !== '443' && dest.port !== '80')) {
+            hosts.add(source);
+        }
+    }
+    return [...hosts];
+}
+
+/**
+ * Destination hosts of enabled redirect rules that leave the source origin
+ * @param {Array} rules - user rules
+ * @returns {string[]}
+ */
+export function redirectRuleTargets(rules) {
+    const hosts = new Set();
+    for (const rule of rules) {
+        if (!rule.enabled || rule.type !== 'redirect' || !rule.config?.redirectUrl) continue;
+        try {
+            hosts.add(new URL(rule.config.redirectUrl.replace(/\\\d|\$\d|\*/g, 'x')).hostname);
+        } catch { /* not an absolute URL */ }
+    }
+    return [...hosts];
+}
+
+async function getLearnedSites() {
+    const result = await chrome.storage.local.get(AUTO_SITES_KEY);
+    return result[AUTO_SITES_KEY] || [];
+}
+
+/**
+ * Sites added without the user listing them: hosts of cross-origin redirect
+ * rules, plus pages seen making requests that a Nariya redirect sent to
+ * another origin
+ */
+async function getAutoSites() {
+    return [...new Set([...redirectRuleSites(await getAllRules()), ...(await getLearnedSites())])];
+}
+
+/**
+ * All bypass sites: the user's list plus the automatic ones
+ */
+async function getSites(settings) {
+    return [...new Set([
+        ...normalizeSites(settings.corsBypassSites ?? DEFAULT_CORS_SITES),
+        ...(await getAutoSites())
+    ])];
+}
+
+/**
+ * All bypass sites (user list + automatic)
+ */
+export function getBypassSites(settings) {
+    return getSites(settings);
+}
+
+let onSitesChanged = () => { };
+
+/**
+ * Called whenever automatic bypass sites change (e.g. a page was learned)
+ */
+export function setOnBypassSitesChanged(callback) {
+    onSitesChanged = callback;
+}
+
+/**
+ * Is this origin (a page) one of the bypass sites?
+ */
+export async function isBypassOrigin(origin, settings) {
+    return !!bypassOrigin(origin, await getSites(settings));
 }
 
 // ─── Preflight log (shown in the dashboard's CORS panel) ────────
@@ -234,7 +342,7 @@ async function onPreflightDone(details) {
     if (details.method !== 'OPTIONS' || !details.initiator) return;
     const settings = await getSettings();
     if (!settings.globalEnabled || !settings.allowCorsBypass) return;
-    if (!isBypassOrigin(details.initiator, settings)) return;
+    if (!(await isBypassOrigin(details.initiator, settings))) return;
 
     const status = details.statusCode || 0;
     const ok = !details.error && status >= 200 && status < 300;
@@ -266,11 +374,18 @@ export async function getCorsStatus() {
         }));
     return {
         enabled: !!(settings.globalEnabled && settings.allowCorsBypass),
-        sites: getSites(settings),
-        origins: [...new Set(active.map(a => a.origin))],
+        sites: normalizeSites(settings.corsBypassSites ?? DEFAULT_CORS_SITES),
+        autoSites: await getAutoSites(),
+        origins: [...new Set(active.map(a => a.origin).filter(o => o && o !== 'null'))],
         learnedHeaders: await getLearnedHeaders(),
         preflights: preflightLog
     };
+}
+
+export async function clearAutoSites() {
+    await chrome.storage.local.remove(AUTO_SITES_KEY);
+    await syncCorsRules();
+    onSitesChanged();
 }
 
 export async function clearLearnedHeaders() {
@@ -303,7 +418,7 @@ async function doSync() {
 
         let addRules = [];
         if (enabled) {
-            const sites = getSites(settings);
+            const sites = await getSites(settings);
             const tabs = await chrome.tabs.query({});
             const remembered = await getRememberedOrigins();
             // Make sure every open bypass tab has a host-wide fallback too
@@ -315,7 +430,8 @@ async function doSync() {
                 sites,
                 tabs,
                 rememberedOrigins: remembered,
-                allowHeaders: await getAllowHeaders(settings)
+                allowHeaders: await getAllowHeaders(settings),
+                redirectTargets: redirectRuleTargets(await getAllRules())
             });
         }
 
@@ -335,7 +451,7 @@ async function doSync() {
 async function onTabUrl(url) {
     const settings = await getSettings();
     if (!settings.globalEnabled || !settings.allowCorsBypass) return;
-    const origin = bypassOrigin(url, getSites(settings));
+    const origin = bypassOrigin(url, await getSites(settings));
     if (origin) await rememberOrigin(origin);
 }
 
@@ -351,19 +467,71 @@ async function learnPreflightHeaders(details) {
         h => h.name.toLowerCase() === 'access-control-request-headers'
     );
     if (!acrh?.value) return;
+    await allowRequestHeaders(details.initiator, acrh.value);
+}
 
+/**
+ * Allow these request header names for credentialed CORS requests from
+ * `pageOrigin` (a bypass site). Resolves once the rules are updated.
+ * The in-page interceptor calls this before sending a request with a header
+ * it has not used yet, so even the first request passes.
+ * @param {string} pageOrigin
+ * @param {string|string[]} names
+ * @returns {Promise<string[]>} header names newly allowed
+ */
+export async function allowRequestHeaders(pageOrigin, names) {
     const settings = await getSettings();
-    if (!settings.globalEnabled || !settings.allowCorsBypass) return;
-    if (!bypassOrigin(details.initiator, getSites(settings))) return;
+    if (!settings.globalEnabled || !settings.allowCorsBypass) return [];
+    if (!bypassOrigin(pageOrigin, await getSites(settings))) return [];
 
     const known = new Set(await getAllowHeaders(settings));
-    const fresh = normalizeHeaderNames(acrh.value).filter(h => !known.has(h));
-    if (fresh.length === 0) return;
+    const fresh = normalizeHeaderNames(names).filter(h => !known.has(h));
+    if (fresh.length === 0) return [];
 
     const learned = await getLearnedHeaders();
     await chrome.storage.local.set({ [LEARNED_HEADERS_KEY]: [...new Set([...learned, ...fresh])] });
     console.log(`[Nariya] CORS: now allowing request header(s): ${fresh.join(', ')}`);
     await syncCorsRules();
+    return fresh;
+}
+
+/**
+ * A Nariya redirect just turned a page's request into a cross-origin one.
+ * If that page is not a bypass site yet, add it, so the request (or at
+ * worst its retry) passes CORS.
+ */
+async function onRedirect(details) {
+    if (!details.initiator || details.tabId < 0) return;
+    // Extension (DNR) redirects are internal 307s
+    if (details.statusCode !== 307 || !/Internal Redirect/i.test(details.statusLine || '')) return;
+
+    let initiator, target, from;
+    try {
+        initiator = new URL(details.initiator);
+        target = new URL(details.redirectUrl);
+        from = new URL(details.url);
+    } catch {
+        return;
+    }
+    if (target.origin === initiator.origin) return;
+    // HSTS / upgrade-insecure-requests: same URL, https
+    if (from.href.replace(/^http:/, 'https:') === target.href) return;
+
+    const settings = await getSettings();
+    if (!settings.globalEnabled || !settings.allowCorsBypass) return;
+    if (bypassOrigin(details.initiator, await getSites(settings))) return;
+
+    const rules = await getAllRules();
+    if (!rules.some(r => r.enabled && r.type === 'redirect')) return;
+
+    const learned = await getLearnedSites();
+    if (learned.includes(initiator.hostname)) return;
+    learned.push(initiator.hostname);
+    await chrome.storage.local.set({ [AUTO_SITES_KEY]: learned.slice(-MAX_AUTO_SITES) });
+    await rememberOrigin(initiator.origin);
+    console.log(`[Nariya] CORS: ${initiator.hostname} added (a redirect rule sends its calls to ${target.origin})`);
+    await syncCorsRules();
+    onSitesChanged();
 }
 
 /**
@@ -382,6 +550,11 @@ export function setupCorsBypass() {
         (details) => { learnPreflightHeaders(details); },
         { urls: ['<all_urls>'], types: ['xmlhttprequest', 'other'] },
         ['requestHeaders', 'extraHeaders']
+    );
+
+    chrome.webRequest.onBeforeRedirect.addListener(
+        (details) => { onRedirect(details); },
+        { urls: ['<all_urls>'], types: ['xmlhttprequest', 'other', 'font'] }
     );
 
     const preflightFilter = { urls: ['<all_urls>'], types: ['xmlhttprequest', 'other'] };
