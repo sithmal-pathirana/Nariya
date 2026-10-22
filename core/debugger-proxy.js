@@ -20,7 +20,7 @@ export function setOnRequestPaused(callback) {
 
 /**
  * Set callback for responses
- * @param {Function} callback - (tabId, params) => void
+ * @param {Function} callback - (tabId, params, request: { method, headers }) => void
  */
 export function setOnResponseReceived(callback) {
     onResponseReceived = callback;
@@ -62,6 +62,7 @@ export async function attach(tabId, options = {}) {
     attachedTabs.set(tabId, {
         attached: true,
         pausedRequests: new Map(),
+        requests: new Map(),
         options
     });
 
@@ -207,9 +208,23 @@ export function handleEvent(source, method, params) {
             break;
         }
 
+        case 'Network.requestWillBeSent': {
+            // responseReceived has no method, so remember it per request
+            session.requests.set(params.requestId, {
+                method: params.request?.method,
+                headers: params.request?.headers
+            });
+            if (session.requests.size > 500) {
+                session.requests.delete(session.requests.keys().next().value);
+            }
+            break;
+        }
+
         case 'Network.responseReceived': {
+            const request = session.requests.get(params.requestId);
+            session.requests.delete(params.requestId);
             if (onResponseReceived) {
-                onResponseReceived(tabId, params);
+                onResponseReceived(tabId, params, request);
             }
             break;
         }

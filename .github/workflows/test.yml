@@ -1,0 +1,38 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    # Pinned: Playwright 1.56 cannot install Chromium on newer Ubuntu images
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: tests
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tests/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      # Full Chromium: the headless shell cannot load extensions
+      - run: npx playwright install --with-deps chromium
+
+      - run: npm test
+
+      - name: Build Web Store package
+        run: npm run package
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nariya-extension
+          path: dist/*.zip

@@ -94,7 +94,7 @@ export async function replay(entry, overrides = {}) {
     for (const h of headerList) {
         try {
             headers.set(h.name, h.value);
-        } catch (e) {
+        } catch {
             // Skip invalid headers
         }
     }

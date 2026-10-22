@@ -1296,3 +1296,211 @@ body {
     font-size: 13px; 
     color: var(--text-secondary); 
 }
+.badge-proxy {
+    background: rgba(6, 182, 212, 0.12);
+    color: #06b6d4;
+}
+
+/* ─── CORS status panel ─── */
+.cors-status-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+}
+
+.cors-status-label {
+    width: 130px;
+    flex-shrink: 0;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.cors-chip-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+}
+
+.cors-chip {
+    font-family: var(--font-mono, monospace);
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--accent-dim);
+    color: var(--accent);
+}
+
+.cors-empty {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.cors-preflight-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.cors-preflight {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    padding: 6px 8px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+}
+
+.cors-preflight.fail {
+    border-color: var(--accent-red);
+}
+
+.cors-preflight-status {
+    font-family: var(--font-mono, monospace);
+    font-weight: 600;
+    min-width: 34px;
+}
+
+.cors-preflight.ok .cors-preflight-status { color: var(--accent-green); }
+.cors-preflight.fail .cors-preflight-status { color: var(--accent-red); }
+
+.cors-preflight-url {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono, monospace);
+}
+
+.cors-preflight-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+/* ─── Request Recorder ─── */
+.recorder-controls,
+.recorder-options {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.recorder-options label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.recorder-status {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.recorder-status.live {
+    color: var(--accent-red);
+    font-weight: 600;
+}
+
+.recorder-live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent-red);
+    margin-left: auto;
+    animation: recorder-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes recorder-pulse {
+    50% { opacity: 0.3; }
+}
+
+.recorder-table-wrap {
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.recorder-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+.recorder-table th,
+.recorder-table td {
+    padding: 6px 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+
+.recorder-table td.url {
+    font-family: var(--font-mono, monospace);
+    max-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.recorder-table td.method {
+    font-weight: 700;
+    font-family: var(--font-mono, monospace);
+}
+
+.recorder-table .status-ok { color: var(--accent-green); }
+.recorder-table .status-err { color: var(--accent-red); }
+
+/* ─── Rule templates ─── */
+.template-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 12px;
+}
+
+.template-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 14px;
+    text-align: left;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    cursor: pointer;
+    font: inherit;
+}
+
+.template-card:hover {
+    border-color: var(--accent);
+}
+
+.template-card span:last-child {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* ─── Rules file mirror status ─── */
+.mirror-status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.mirror-status .ok { color: var(--accent-green); }
+.mirror-status .err { color: var(--accent-red); }

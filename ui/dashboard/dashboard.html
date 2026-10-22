@@ -69,6 +69,14 @@
                     </svg>
                     <span>Logs</span>
                 </button>
+                <button class="nav-item" data-tab="recorder">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <circle cx="12" cy="12" r="4" fill="currentColor"></circle>
+                    </svg>
+                    <span>Recorder</span>
+                    <span class="recorder-live-dot" id="recorderLiveDot" hidden></span>
+                </button>
                 <button class="nav-item" data-tab="settings">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="3"></circle>
@@ -113,9 +121,11 @@
                             style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
                             <div>
                                 <strong>CORS Bypass</strong>
-                                <p style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Automatically
-                                    intercepts Preflight requests and injects
-                                    <code>Access-Control-Allow-Origin: *</code>.
+                                <p style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Lets pages on
+                                    the sites below call any API cross-origin (including preflights, cookies and
+                                    <code>Authorization</code>) in a normal Chrome profile. Responses get
+                                    <code>Access-Control-Allow-Origin</code> set to the page's exact origin.
+                                    Other sites (Gmail, Google Chat, ...) are never touched.
                                 </p>
                             </div>
                             <label class="toggle-switch">
@@ -123,6 +133,74 @@
                                 <span class="slider"></span>
                             </label>
                         </div>
+
+                        <div class="form-group" style="margin-bottom: 12px;">
+                            <label for="corsSitesInput" style="font-size: 13px; font-weight: 600;">Bypass CORS for
+                                requests made by these sites</label>
+                            <textarea id="corsSitesInput" class="code-input" rows="3"
+                                placeholder="localhost&#10;127.0.0.1&#10;dev.myapp.com"
+                                style="width: 100%; font-family: var(--font-mono, monospace); font-size: 12px; margin-top: 6px;"></textarea>
+                            <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">One host per line
+                                (subdomains included). Use the address of your <em>frontend</em>, not the API.
+                                Only add sites you trust: their pages can read cross-origin responses with your
+                                cookies.</p>
+                        </div>
+
+                        <div class="form-group" style="margin-bottom: 12px;">
+                            <label for="corsHeadersInput" style="font-size: 13px; font-weight: 600;">Extra allowed
+                                request headers (optional)</label>
+                            <input type="text" id="corsHeadersInput" class="text-input"
+                                placeholder="x-my-header, x-feature-flag"
+                                style="width: 100%; font-family: var(--font-mono, monospace); font-size: 12px; margin-top: 6px;">
+                            <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Common headers
+                                are allowed already, and new ones seen on preflights are learned automatically.</p>
+                        </div>
+
+                        <button id="saveCorsSettingsBtn" class="btn btn-primary">Save CORS Settings</button>
+
+                        <!-- Live CORS status -->
+                        <div id="corsStatusPanel" class="cors-status" style="margin-top: 20px; border-top: 1px solid var(--border); padding-top: 16px;">
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+                                <strong style="font-size: 14px;">CORS Status</strong>
+                                <button id="refreshCorsStatusBtn" class="btn btn-ghost" style="font-size: 12px; padding: 2px 8px;">Refresh</button>
+                            </div>
+                            <div class="cors-status-row">
+                                <span class="cors-status-label">Active origins</span>
+                                <div id="corsActiveOrigins" class="cors-chip-list"></div>
+                            </div>
+                            <div class="cors-status-row">
+                                <span class="cors-status-label">Learned headers</span>
+                                <div id="corsLearnedHeaders" class="cors-chip-list"></div>
+                                <button id="clearLearnedHeadersBtn" class="btn btn-ghost" style="font-size: 12px; padding: 2px 8px;">Clear</button>
+                            </div>
+                            <div class="cors-status-row" style="align-items: flex-start;">
+                                <span class="cors-status-label">Recent preflights</span>
+                                <div style="flex: 1; min-width: 0;">
+                                    <div id="corsPreflightList" class="cors-preflight-list"></div>
+                                    <button id="clearPreflightsBtn" class="btn btn-ghost" style="font-size: 12px; padding: 2px 8px; margin-top: 6px;">Clear log</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Page Interceptor -->
+                    <div class="settings-card"
+                        style="background: var(--bg-secondary); padding: 20px; border-radius: var(--radius); border: 1px solid var(--border);">
+                        <h2
+                            style="font-size: 16px; margin-bottom: 16px; color: var(--text-primary); border-bottom: 1px solid var(--border); padding-bottom: 8px;">
+                            Page Interceptor</h2>
+                        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">Mock, Delay and
+                            Proxy rules, and the Recorder, work by wrapping <code>fetch</code> and
+                            <code>XMLHttpRequest</code> inside pages. Nariya only does this while such rules exist
+                            or a recording is running.</p>
+                        <div class="form-group" style="margin-bottom: 12px;">
+                            <label for="interceptorSitesInput" style="font-size: 13px; font-weight: 600;">Only on these
+                                sites (optional)</label>
+                            <textarea id="interceptorSitesInput" class="code-input" rows="2"
+                                placeholder="Leave empty for every site, or e.g.&#10;localhost&#10;dev.myapp.com"
+                                style="width: 100%; font-family: var(--font-mono, monospace); font-size: 12px; margin-top: 6px;"></textarea>
+                        </div>
+                        <button id="saveInterceptorSettingsBtn" class="btn btn-primary">Save</button>
                     </div>
 
                     <!-- Storage Configuration -->
@@ -182,6 +260,18 @@
                             </div>
                         </div>
 
+                        <div class="form-group" style="margin-top: 16px;">
+                            <label for="backendUrlInput" style="font-size: 13px; font-weight: 600;">Nariya Cloud
+                                backend URL</label>
+                            <div style="display: flex; gap: 8px; margin-top: 6px;">
+                                <input type="url" id="backendUrlInput" class="text-input" placeholder="http://localhost:8080"
+                                    style="flex: 1; font-family: var(--font-mono, monospace); font-size: 12px;">
+                                <button id="saveBackendUrlBtn" class="btn btn-ghost">Save</button>
+                            </div>
+                            <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Used for sign-in,
+                                rule sync and cloud mocks.</p>
+                        </div>
+
                         <!-- Local Mode Block -->
                         <div id="localStorageBlock" style="margin-top: 16px;">
                             <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">Cloud Sync is
@@ -220,6 +310,11 @@
                                     <button class="btn btn-primary" id="gdriveAuthBtn" style="display: none;">Connect
                                         Drive</button>
                                 </label>
+                            </div>
+                            <div class="mirror-status" id="mirrorStatusRow" hidden>
+                                <span id="mirrorStatus"></span>
+                                <button class="btn btn-ghost" id="regrantFolderBtn" hidden>Grant folder access</button>
+                                <button class="btn btn-ghost" id="mirrorNowBtn">Sync now</button>
                             </div>
                         </div>
                     </div>
@@ -642,6 +737,58 @@
                 </div>
             </section>
 
+            <section class="tab-panel" id="tab-recorder">
+                <div class="panel-header">
+                    <h1>Request Recorder</h1>
+                    <div class="panel-actions">
+                        <button class="btn btn-ghost" id="recorderExportHarBtn">Export HAR</button>
+                        <button class="btn btn-primary" id="recorderExportPostmanBtn">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                                <polyline points="7 10 12 15 17 10" />
+                                <line x1="12" y1="15" x2="12" y2="3" />
+                            </svg>
+                            Export Postman Collection
+                        </button>
+                    </div>
+                </div>
+
+                <div class="recorder-controls">
+                    <select id="recorderTabSelect" class="select-input" style="max-width: 320px;"></select>
+                    <button class="btn btn-primary" id="recorderStartBtn">Start Recording</button>
+                    <button class="btn btn-ghost" id="recorderStopBtn" hidden>Stop</button>
+                    <button class="btn btn-ghost" id="recorderClearBtn">Clear</button>
+                    <span class="recorder-status" id="recorderStatus">Not recording</span>
+                </div>
+
+                <div class="recorder-options">
+                    <label><input type="text" id="recorderCollectionName" class="text-input" value="Nariya Recording" style="width: 220px;"> Collection name</label>
+                    <label><input type="checkbox" id="recorderDedupe" checked> One request per endpoint</label>
+                    <label><input type="checkbox" id="recorderRedact" checked> Leave tokens/API keys empty</label>
+                    <label><input type="checkbox" id="recorderTests" checked> Generate tests</label>
+                    <input type="text" id="recorderFilter" class="text-input" placeholder="Filter by URL or method..." style="max-width: 260px; margin-left: auto;">
+                </div>
+
+                <div class="recorder-table-wrap">
+                    <table class="recorder-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 28px;"><input type="checkbox" id="recorderSelectAll" checked title="Select all"></th>
+                                <th style="width: 70px;">Method</th>
+                                <th>URL</th>
+                                <th style="width: 70px;">Status</th>
+                                <th style="width: 70px;">Time</th>
+                                <th style="width: 60px;">Body</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recorderTableBody"></tbody>
+                    </table>
+                    <div class="empty-state" id="recorderEmpty">Pick a tab, press <strong>Start Recording</strong> and use
+                        your app. Fetch/XHR calls show up here and can be exported as a Postman collection with tests.</div>
+                </div>
+            </section>
+
             <section class="tab-panel" id="tab-logs">
                 <div class="panel-header">
                     <h1>Execution Logs</h1>
@@ -667,6 +814,7 @@
                             <button class="filter-chip" data-filter="header">Header</button>
                             <button class="filter-chip" data-filter="mock">Mock</button>
                             <button class="filter-chip" data-filter="delay">Delay</button>
+                            <button class="filter-chip" data-filter="proxy">Proxy</button>
                         </div>
                         <input type="text" id="logsSearchInput" class="text-input" placeholder="Search logs by URL..." style="max-width: 300px;">
                     </div>
@@ -704,6 +852,7 @@
                         <option value="header">Modify Headers</option>
                         <option value="mock">Mock Response</option>
                         <option value="delay">Delay Request</option>
+                        <option value="proxy">Send via Nariya (Proxy)</option>
                     </select>
                 </div>
                 <div class="field-row">
@@ -863,6 +1012,20 @@
                     </div>
                 </div>
 
+                <!-- Proxy Config -->
+                <div class="config-section" id="configProxy" style="display:none;">
+                    <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5;">
+                        Matching fetch/XHR calls are sent by Nariya's background worker instead of the page,
+                        so CORS and preflights do not apply. Use it when the API answers <code>OPTIONS</code>
+                        with 401/404/405, which no header rule can fix. The response is handed back to the
+                        page unchanged, with every header readable.
+                    </p>
+                    <p style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">
+                        Only works on pages listed under <strong>Settings → CORS Bypass</strong>. The API sees
+                        your page's origin and your cookies for that API.
+                    </p>
+                </div>
+
                 <!-- Script Config -->
                 <div class="config-section" id="configScript" style="display:none;">
                     <div class="field-row">
@@ -906,6 +1069,43 @@
             <div class="modal-footer">
                 <button class="btn btn-ghost" id="cancelRuleBtn">Cancel</button>
                 <button class="btn btn-primary" id="saveRuleBtn">Save Rule</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rule Templates Modal -->
+    <div class="modal-overlay" id="templatesModal" style="display:none;">
+        <div class="modal" style="max-width: 640px;">
+            <div class="modal-header">
+                <h2>Rule Templates</h2>
+                <button class="btn-close" id="closeTemplatesModalBtn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="template-grid">
+                    <button class="template-card" data-template="cors">
+                        <span class="rule-type-badge badge-header">cors</span>
+                        <strong>Bypass CORS for my dev site</strong>
+                        <span>Turns on the built-in CORS bypass (exact origin, cookies, preflights).</span>
+                    </button>
+                    <button class="template-card" data-template="proxy">
+                        <span class="rule-type-badge badge-proxy">proxy</span>
+                        <strong>Send API calls via Nariya</strong>
+                        <span>For APIs that reject preflights (OPTIONS → 401/404/405).</span>
+                    </button>
+                    <button class="template-card" data-template="mock500">
+                        <span class="rule-type-badge badge-mock">mock</span>
+                        <strong>Simulate 500 Server Error</strong>
+                        <span>Return an error JSON for <code>/api/*</code> calls.</span>
+                    </button>
+                    <button class="template-card" data-template="delayAPI">
+                        <span class="rule-type-badge badge-delay">delay</span>
+                        <strong>Heavy Network Delay (3s)</strong>
+                        <span>Slow down <code>/api/*</code> calls to test loading states.</span>
+                    </button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" id="cancelTemplatesBtn">Close</button>
             </div>
         </div>
     </div>

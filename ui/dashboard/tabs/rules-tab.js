@@ -5,7 +5,6 @@ import { escapeHtml, showToast } from '../../shared/utils.js';
 import { openRuleModal } from '../dashboard.js';
 
 const rulesTableBody = document.getElementById('rulesTableBody');
-const addRuleBtn = document.getElementById('addRuleBtn');
 const importRulesBtn = document.getElementById('importRulesBtn');
 const importShareBtn = document.getElementById('importShareBtn');
 const exportRulesBtn = document.getElementById('exportRulesBtn');

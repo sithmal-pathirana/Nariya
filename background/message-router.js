@@ -8,10 +8,11 @@ import * as debuggerHandler from './handlers/debugger-handler.js';
 import * as repeaterHandler from './handlers/repeater-handler.js';
 import * as miscHandler from './handlers/misc-handler.js';
 import * as storage from '../core/storage/storage.js';
-import * as repeater from '../core/repeater.js';
 import * as analyzer from '../core/analyzer.js';
 import * as executionLogs from '../core/execution-logs.js';
-import * as debuggerProxy from '../core/debugger-proxy.js';
+import * as recorder from '../core/recorder.js';
+import { mirrorNow, getMirrorStatus } from '../core/storage/mirror.js';
+import { getCorsStatus, clearLearnedHeaders, clearPreflightLog } from '../core/cors-bypass.js';
 
 /**
  * Handle UI messages (from popup / dashboard)
@@ -75,6 +76,60 @@ export async function handleUIMessage(message, sender, sendResponse, syncRulesFn
             }
             case 'LOGS_CLEAR': {
                 executionLogs.clearLogs();
+                sendResponse({ ok: true });
+                break;
+            }
+
+            // --- CORS panel ---
+            case 'CORS_GET_STATUS': {
+                sendResponse({ ok: true, data: await getCorsStatus() });
+                break;
+            }
+            case 'CORS_CLEAR_LEARNED': {
+                await clearLearnedHeaders();
+                sendResponse({ ok: true });
+                break;
+            }
+            case 'CORS_CLEAR_PREFLIGHTS': {
+                await clearPreflightLog();
+                sendResponse({ ok: true });
+                break;
+            }
+
+            // --- Rules file (folder / Google Drive) ---
+            case 'MIRROR_NOW': {
+                const status = await mirrorNow(await storage.getAllRules(), await storage.getSettings());
+                sendResponse({ ok: true, data: status });
+                break;
+            }
+            case 'MIRROR_STATUS': {
+                sendResponse({ ok: true, data: await getMirrorStatus() });
+                break;
+            }
+
+            // --- Request Recorder ---
+            case 'RECORDER_GET': {
+                sendResponse({
+                    ok: true,
+                    data: { state: await recorder.getState(), entries: await recorder.getEntries() }
+                });
+                break;
+            }
+            case 'RECORDER_START': {
+                sendResponse({ ok: true, data: await recorder.start(message.payload?.tabId ?? null) });
+                break;
+            }
+            case 'RECORDER_STOP': {
+                sendResponse({ ok: true, data: await recorder.stop() });
+                break;
+            }
+            case 'RECORDER_CLEAR': {
+                await recorder.clear();
+                sendResponse({ ok: true });
+                break;
+            }
+            case 'RECORDER_DELETE': {
+                await recorder.deleteEntries(message.payload?.ids || []);
                 sendResponse({ ok: true });
                 break;
             }
