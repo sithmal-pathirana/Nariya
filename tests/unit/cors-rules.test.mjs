@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeSites, buildCorsRules, CORS_RULE_ID_BASE } from '../../core/cors-bypass.js';
+import { normalizeSites, buildCorsRules, CORS_RULE_ID_BASE, patternHost, redirectRuleSites, redirectRuleTargets } from '../../core/cors-bypass.js';
 import { sitesToMatchPatterns } from '../../background/content-scripts.js';
 
 test('normalizeSites accepts hosts, URLs and wildcards', () => {
@@ -43,4 +43,41 @@ test('buildCorsRules: exact origin, credentials, host + per-tab rules', () => {
 test('sitesToMatchPatterns', () => {
     assert.deepEqual(sitesToMatchPatterns([]), ['<all_urls>']);
     assert.deepEqual(sitesToMatchPatterns(['localhost', '127.0.0.1']), ['*://localhost/*', '*://*.localhost/*', '*://127.0.0.1/*']);
+});
+
+test('patternHost finds the host a URL pattern is about', () => {
+    assert.equal(patternHost('https://bahqa-central.codegen.net/tbx-setup/supplier/'), 'bahqa-central.codegen.net');
+    assert.equal(patternHost('*api.example.com*'), 'api.example.com');
+    assert.equal(patternHost('||example.com^'), 'example.com');
+    assert.equal(patternHost('http://localhost:3000/x'), 'localhost');
+    assert.equal(patternHost('/api/*'), null);
+    assert.equal(patternHost('*'), null);
+});
+
+test('redirect rules: source hosts become bypass sites, destinations are listed', () => {
+    const rules = [
+        { enabled: true, type: 'redirect', urlFilter: 'https://bahqa-central.codegen.net/tbx-setup/supplier/',
+            config: { redirectMode: 'replace', matchPattern: 'https://bahqa-central.codegen.net/tbx-setup/supplier/', redirectUrl: 'http://localhost:8081/' } },
+        // Same origin: no CORS involved
+        { enabled: true, type: 'redirect', urlFilter: 'https://a.com/old', config: { redirectUrl: 'https://a.com/new' } },
+        { enabled: false, type: 'redirect', urlFilter: 'https://b.com/', config: { redirectUrl: 'http://localhost:9/' } },
+        { enabled: true, type: 'redirect', urlFilter: '*/api/*', config: { redirectUrl: 'http://localhost:7/' } }
+    ];
+    assert.deepEqual(redirectRuleSites(rules), ['bahqa-central.codegen.net']);
+    assert.deepEqual(redirectRuleTargets(rules), ['localhost', 'a.com']);
+});
+
+test('buildCorsRules: Origin null rule for redirect destinations, lowest priority', () => {
+    const rules = buildCorsRules({
+        sites: ['app.test'],
+        tabs: [{ id: 3, url: 'http://app.test/' }],
+        rememberedOrigins: ['http://app.test'],
+        allowHeaders: ['*'],
+        redirectTargets: ['localhost']
+    });
+    const nullRule = rules.find(r => r.action.responseHeaders[0].value === 'null');
+    assert.ok(nullRule);
+    assert.deepEqual(nullRule.condition.requestDomains, ['localhost']);
+    assert.deepEqual(nullRule.condition.tabIds, [3]);
+    assert.ok(rules.every(r => r === nullRule || r.priority > nullRule.priority));
 });

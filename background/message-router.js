@@ -12,7 +12,7 @@ import * as analyzer from '../core/analyzer.js';
 import * as executionLogs from '../core/execution-logs.js';
 import * as recorder from '../core/recorder.js';
 import { mirrorNow, getMirrorStatus } from '../core/storage/mirror.js';
-import { getCorsStatus, clearLearnedHeaders, clearPreflightLog } from '../core/cors-bypass.js';
+import { getCorsStatus, clearLearnedHeaders, clearPreflightLog, clearAutoSites } from '../core/cors-bypass.js';
 
 /**
  * Handle UI messages (from popup / dashboard)
@@ -87,6 +87,11 @@ export async function handleUIMessage(message, sender, sendResponse, syncRulesFn
             }
             case 'CORS_CLEAR_LEARNED': {
                 await clearLearnedHeaders();
+                sendResponse({ ok: true });
+                break;
+            }
+            case 'CORS_CLEAR_AUTO_SITES': {
+                await clearAutoSites();
                 sendResponse({ ok: true });
                 break;
             }

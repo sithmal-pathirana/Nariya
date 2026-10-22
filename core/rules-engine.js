@@ -278,3 +278,41 @@ export function getInterceptorRules(userRules) {
         r => r.enabled && (r.type === 'mock' || r.type === 'delay' || r.type === 'proxy')
     );
 }
+
+/**
+ * Redirect rules in the form the in-page interceptor applies them.
+ * When a page's fetch/XHR goes to ANOTHER host and a rule redirects it to a
+ * third origin, Chrome sends the redirected call with "Origin: null", which
+ * no CORS header rule can satisfy reliably. The interceptor therefore sends
+ * such calls straight to the destination (see content/interceptor.js).
+ * Highest priority first.
+ * @param {Array} userRules
+ * @returns {Array<{ type: 'redirect', id, priority, regexFilter?, regexSubstitution?, urlFilter?, url? }>}
+ */
+export function getRedirectRewrites(userRules) {
+    const rewrites = [];
+    for (const rule of userRules) {
+        if (!rule.enabled || rule.type !== 'redirect') continue;
+        const compiled = compileRule(rule, 0);
+        if (!compiled || !compiled.condition.resourceTypes?.includes('xmlhttprequest')) continue;
+        rewrites.push({
+            type: 'redirect',
+            id: rule.id,
+            priority: compiled.priority,
+            regexFilter: compiled.condition.regexFilter,
+            regexSubstitution: compiled.action.redirect.regexSubstitution,
+            urlFilter: compiled.condition.urlFilter,
+            url: compiled.action.redirect.url
+        });
+    }
+    return rewrites.sort((a, b) => b.priority - a.priority);
+}
+
+/**
+ * Everything the in-page interceptor needs: mock/delay/proxy rules and
+ * redirect rewrites
+ * @param {Array} userRules
+ */
+export function getPageRules(userRules) {
+    return [...getInterceptorRules(userRules), ...getRedirectRewrites(userRules)];
+}
