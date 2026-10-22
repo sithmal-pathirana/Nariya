@@ -54,10 +54,11 @@
         // Check base URL exact match
         if (urlBase === filterBase) return true;
 
-        // Wildcard match
+        // Wildcard match — unanchored like DNR urlFilter, so "/api/*" matches
+        // "https://host/api/users" the same way redirect/header rules do
         if (filter.includes('*')) {
             const regex = new RegExp(
-                '^' + filter.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$'
+                filter.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')
             );
             return regex.test(url) || regex.test(urlBase);
         }
@@ -96,8 +97,23 @@
     const originalFetch = window.fetch;
 
     window.fetch = async function (...args) {
-        const request = new Request(...args);
-        const url = request.url;
+        // No rules: hand straight to the browser, untouched
+        if (mockRules.length === 0 && delayRules.length === 0) {
+            return originalFetch.apply(this, args);
+        }
+
+        // Read url/method without building a new Request: new Request(req)
+        // consumes req's body, so the real fetch below would then throw
+        // "Request object that has already been used".
+        const [input, init] = args;
+        const isRequest = input instanceof Request;
+        let url;
+        try {
+            url = isRequest ? input.url : new URL(String(input), window.location.href).href;
+        } catch {
+            return originalFetch.apply(this, args);
+        }
+        const request = { method: (init?.method || (isRequest ? input.method : 'GET')).toUpperCase() };
 
         // Check for mock rule
         const mockRule = findMockRule(url);
